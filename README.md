@@ -1,1 +1,0 @@
-# simay-muhasebe
