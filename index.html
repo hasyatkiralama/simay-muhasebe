@@ -533,15 +533,14 @@ body.light-mode .sb-yil-sel{background:rgba(7,122,109,0.08);border-color:rgba(7,
 
 /* Tarih grubu (başlangıç → bitiş → süre chip) */
 .sm-date-group{
-  display:flex;align-items:flex-end;gap:6px;
+  display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px;
   flex:1 1 0;min-width:0;
 }
+.sm-gun-chip-col{flex-basis:100%;display:flex;flex-direction:row;align-items:center;gap:8px;padding-top:4px}
 .sm-date-arrow{
   color:var(--ink3);font-size:14px;padding-bottom:10px;flex-shrink:0;line-height:1;
 }
-.sm-gun-chip-col{
-  display:flex;flex-direction:column;align-items:center;flex-shrink:0;padding-bottom:1px;
-}
+/* sm-gun-chip-col merged above */
 .sm-gun-lbl{font-size:8px;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink3);margin-bottom:4px;font-weight:600}
 .sm-gun-chip{
   background:linear-gradient(135deg,rgba(11,122,110,0.18),rgba(24,180,162,0.12));
@@ -913,13 +912,19 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
       <span class="sb-badge" id="badge-simay">0</span>
     </div>
     <div class="sb-item" data-page="acente">
-      <span class="si">🤝</span>Acente / Dış Satış
+      <span class="si">🤝</span>Acenta / Dış Satış
       <span class="sb-badge" id="badge-acente">0</span>
     </div>
 
     <div class="sb-section">Finans</div>
     <div class="sb-item" data-page="gider">
-      <span class="si">📉</span>Gider Kayıtları
+      <span class="si">📊</span>Tüm Giderler
+    </div>
+    <div class="sb-item" data-page="gider-simay">
+      <span class="si">⛵</span>Simay Giderleri
+    </div>
+    <div class="sb-item" data-page="gider-acenta">
+      <span class="si">🤝</span>Acenta Giderleri
     </div>
     <div class="sb-item" data-page="fatura">
       <span class="si">🧾</span>Faturalar
@@ -991,7 +996,7 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
     <div class="ph-actions">
       <button class="btn btn-ghost" onclick="exportCSV()">⬇ Excel İndir</button>
       <button class="btn btn-gold" onclick="openModal('modal-simay','Simay Tekneleri — Yeni Satış')">+ Simay Ekle</button>
-      <button class="btn btn-teal" onclick="openModal('modal-acente','Acente — Yeni Satış')">+ Acente Ekle</button>
+      <button class="btn btn-teal" onclick="openModal('modal-acente','Acenta — Yeni Satış')">+ Acenta Ekle</button>
     </div>
   </div>
 
@@ -1033,7 +1038,7 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
     <!-- Aylık chart -->
     <div class="panel">
       <div class="panel-hd">
-        <div><div class="panel-title">Aylık Gelir</div><div class="panel-sub">Simay + Acente</div></div>
+        <div><div class="panel-title">Aylık Gelir</div><div class="panel-sub">Simay + Acenta</div></div>
         <div style="display:flex;gap:12px">
           <div style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--ink2)">
             <div style="width:8px;height:8px;border-radius:2px;background:var(--teal2)"></div>Simay
@@ -1080,7 +1085,7 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
       <select id="rez-tip-sel" class="rez-ay-sel" onchange="renderRezervasyonPage()">
         <option value="all">Tüm Tipler</option>
         <option value="simay">Simay</option>
-        <option value="acente">Acente</option>
+        <option value="acente">Acenta</option>
       </select>
     </div>
   </div>
@@ -1123,10 +1128,10 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
 <!-- ───── ACENTE ───── -->
 <div class="page" id="page-acente">
   <div class="ph">
-    <div class="ph-left"><h2>Acente / Dış Satış</h2><p>Komisyon kâr kayıtları</p></div>
+    <div class="ph-left"><h2>Acenta / Dış Satış</h2><p>Komisyon kâr kayıtları</p></div>
     <div class="ph-actions">
       <button class="btn btn-ghost btn-sm" onclick="exportCSV('acente')">⬇ İndir</button>
-      <button class="btn btn-gold" onclick="openModal('modal-acente','Acente — Yeni Satış')">+ Yeni Ekle</button>
+      <button class="btn btn-gold" onclick="openModal('modal-acente','Acenta — Yeni Satış')">+ Yeni Ekle</button>
     </div>
   </div>
   <div class="kpi-grid" id="acente-kpis" style="grid-template-columns:repeat(3,1fr)"></div>
@@ -1154,19 +1159,44 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
 <!-- ───── GİDER ───── -->
 <div class="page" id="page-gider">
   <div class="ph">
-    <div class="ph-left"><h2>Gider Kayıtları</h2><p>Şirket giderleri</p></div>
-    <button class="btn btn-danger" onclick="openModal('modal-gider','Gider Ekle')">+ Gider Ekle</button>
+    <div class="ph-left"><h2 id="gider-page-title">Tüm Giderler</h2><p id="gider-page-sub">Simay + Acenta toplam giderleri</p></div>
   </div>
-  <div class="kpi-grid" id="gider-kpis" style="grid-template-columns:repeat(2,1fr)"></div>
+  <div class="kpi-grid" id="gider-kpis" style="grid-template-columns:repeat(3,1fr)"></div>
   <div class="tbl-outer">
     <div class="tbl-scroll">
       <table>
-        <thead><tr><th>#</th><th>Tarih</th><th>Kategori</th><th>Açıklama</th><th>Tutar (€)</th><th>İşlem</th></tr></thead>
+        <thead><tr><th>#</th><th>Tür</th><th>Tarih</th><th>Kategori</th><th>Açıklama</th><th>Tutar (€)</th><th>İşlem</th></tr></thead>
         <tbody id="gider-tbody"></tbody>
       </table>
     </div>
   </div>
   <div id="gider-empty" style="display:none" class="empty-state"><div class="es-icon">📉</div><div class="es-text">Henüz gider kaydı yok.</div></div>
+</div>
+<!-- ───── SIMAY GİDER ───── -->
+<div class="page" id="page-gider-simay">
+  <div class="ph">
+    <div class="ph-left"><h2>Simay Tekneleri Giderleri</h2><p>Yalnızca tekne giderleri</p></div>
+    <button class="btn btn-danger" onclick="openGiderModal('simay')">+ Simay Gider Ekle</button>
+  </div>
+  <div class="kpi-grid" id="gider-simay-kpis" style="grid-template-columns:repeat(2,1fr)"></div>
+  <div class="tbl-outer"><div class="tbl-scroll"><table>
+    <thead><tr><th>#</th><th>Tarih</th><th>Kategori</th><th>Açıklama</th><th>Tutar (€)</th><th>İşlem</th></tr></thead>
+    <tbody id="gider-simay-tbody"></tbody>
+  </table></div></div>
+  <div id="gider-simay-empty" style="display:none" class="empty-state"><div class="es-icon">⛵</div><div class="es-text">Simay gideri yok.</div></div>
+</div>
+<!-- ───── ACENTA GİDER ───── -->
+<div class="page" id="page-gider-acenta">
+  <div class="ph">
+    <div class="ph-left"><h2>Acenta Giderleri</h2><p>Yalnızca acenta giderleri</p></div>
+    <button class="btn btn-danger" onclick="openGiderModal('acenta')">+ Acenta Gider Ekle</button>
+  </div>
+  <div class="kpi-grid" id="gider-acenta-kpis" style="grid-template-columns:repeat(2,1fr)"></div>
+  <div class="tbl-outer"><div class="tbl-scroll"><table>
+    <thead><tr><th>#</th><th>Tarih</th><th>Kategori</th><th>Açıklama</th><th>Tutar (€)</th><th>İşlem</th></tr></thead>
+    <tbody id="gider-acenta-tbody"></tbody>
+  </table></div></div>
+  <div id="gider-acenta-empty" style="display:none" class="empty-state"><div class="es-icon">🤝</div><div class="es-text">Acenta gideri yok.</div></div>
 </div>
 
 <!-- ───── RAPORLAR ───── -->
@@ -1210,7 +1240,7 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
       <div class="tbl-outer" style="margin-bottom:0">
         <div class="tbl-scroll">
           <table>
-            <thead><tr><th>Ay</th><th>Simay</th><th>Acente</th><th>Gelir</th><th>Gider</th><th>Net</th></tr></thead>
+            <thead><tr><th>Ay</th><th>Simay</th><th>Acenta</th><th>Gelir</th><th>Gider</th><th>Net</th></tr></thead>
             <tbody id="rapor-aylik-tbody"></tbody>
           </table>
         </div>
@@ -1230,7 +1260,7 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
   </div>
 
   <div class="panel">
-    <div class="panel-hd"><div><div class="panel-title">Simay Tekneleri — Acente Bazlı Satışlar</div><div class="panel-sub">Hangi acentenin kaç satış getirdiği (yıllık raporda toplamda gözükmez, sadece burada izlenir)</div></div></div>
+    <div class="panel-hd"><div><div class="panel-title">Simay Tekneleri — Acenta Bazlı Satışlar</div><div class="panel-sub">Hangi acentenin kaç satış getirdiği (yıllık raporda toplamda gözükmez, sadece burada izlenir)</div></div></div>
     <div id="rapor-acente-simay"></div>
   </div>
 
@@ -1394,14 +1424,16 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
       </div>
 
       <div class="sm-row">
-        <div class="fg sm-half">
+        <div class="fg sm-full">
           <label>Tekne <span class="req">*</span></label>
           <select id="fs-tekne"></select>
         </div>
-        <div class="sm-half sm-date-group">
+      </div>
+      <div class="sm-row" style="align-items:flex-end">
+        <div class="sm-date-group" style="flex:1">
           <div class="fg" style="flex:1">
             <label>Başlangıç</label>
-            <input type="date" id="fs-giris" onchange="calcSimayGun();if(this.value)document.getElementById('fs-cikis').focus()">
+            <input type="date" id="fs-giris" onchange="calcSimayGun();if(this.value){const c=document.getElementById('fs-cikis');c.min=this.value;c.focus();}">
           </div>
           <div class="sm-date-arrow">→</div>
           <div class="fg" style="flex:1">
@@ -1444,7 +1476,7 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
           <select id="fs-sorumlu"><option value="">— Seçin —</option></select>
         </div>
         <div class="fg sm-half">
-          <label>Acente Satışı</label>
+          <label>Acenta Satışı</label>
           <input type="text" id="fs-acente" placeholder="Boş = Doğrudan Satış">
         </div>
       </div>
@@ -1576,7 +1608,7 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
 <div class="modal-bg" id="modal-acente">
   <div class="modal" style="max-width:720px">
     <div class="modal-hd">
-      <div class="modal-title">Acente / Dış Satış — Yeni Satış</div>
+      <div class="modal-title">Acenta / Dış Satış — Yeni Satış</div>
       <button class="modal-close" onclick="closeModal('modal-acente')">✕</button>
     </div>
 
@@ -1587,7 +1619,7 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
         <span style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--blue2)">Tur Bilgileri</span>
       </div>
       <div class="form-grid">
-        <div class="fg span2"><label>Misafir Adı Soyadı *</label><input type="text" id="fa-misafir" placeholder="Ad Soyad veya Firma"></div>
+        <div class="fg span2"><label>Misafir Adı Soyadı *</label><input type="text" id="fa-misafir" placeholder="Ad Soyad veya Firma" oninput="applyTitleCase(this)"></div>
         <div class="fg"><label>Tekne Adı *</label><input type="text" id="fa-tekne" placeholder="By CF, MEİRA..."></div>
         <div class="fg"><label>Satış Sorumlusu</label><select id="fa-sorumlu"><option value="">-- Seçin --</option></select></div>
         <div class="fg"><label>Giriş Limanı</label>
@@ -1606,7 +1638,7 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
             <option>Kaş</option><option>Kekova</option><option>Demre</option>
           </select>
         </div>
-        <div class="fg"><label>Tur Başlangıç Tarihi</label><input type="date" id="fa-giris" onchange="if(this.value)document.getElementById('fa-cikis').focus()"></div>
+        <div class="fg"><label>Tur Başlangıç Tarihi</label><input type="date" id="fa-giris" onchange="onAcentaGirisChange(this.value)"></div>
         <div class="fg"><label>Tur Bitiş Tarihi</label><input type="date" id="fa-cikis"></div>
         <div class="fg span2"><label>Açıklama / Not</label><textarea id="fa-aciklama" style="min-height:56px"></textarea></div>
       </div>
@@ -1620,7 +1652,7 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
       </div>
       <div class="form-grid">
         <div class="fg"><label>Para Birimi</label>
-          <select id="fa-para">
+          <select id="fa-para" onchange="onAcentaParaDegis()">
             <option value="EUR">€ Euro</option>
             <option value="USD">$ Dolar</option>
             <option value="TRY">₺ Türk Lirası</option>
@@ -1649,9 +1681,15 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
       <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(190,138,32,0.15)">
         <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);margin-bottom:10px">👤 Müşteri Ödemeleri</div>
         <div class="form-grid">
-          <div class="fg"><label>Toplam Satış Tutarı</label><input type="number" id="fa-bedel" placeholder="0" oninput="calcAcenteAll()"></div>
-          <div class="fg"><label>Ön Ödeme Tutarı</label><input type="number" id="fa-on" placeholder="0" oninput="calcAcenteAll()"></div>
-          <div class="fg"><label>Kalan Ödeme</label><input type="number" id="fa-kalan" placeholder="Otomatik" readonly class="calc-result" style="color:var(--blue2)"></div>
+          <div class="fg"><label>Toplam Satış Tutarı</label>
+            <div class="sm-money-wrap"><span class="sm-currency" id="fa-bedel-prefix">€</span><input type="number" id="fa-bedel" placeholder="0.00" oninput="calcAcenteAll()" class="sm-money-input"></div>
+          </div>
+          <div class="fg"><label>Ön Ödeme Tutarı</label>
+            <div class="sm-money-wrap"><span class="sm-currency sm-currency-teal" id="fa-on-prefix">€</span><input type="number" id="fa-on" placeholder="0.00" oninput="calcAcenteAll()" class="sm-money-input"></div>
+          </div>
+          <div class="fg"><label>Kalan Ödeme</label>
+            <div class="sm-money-wrap"><span class="sm-currency sm-currency-red" id="fa-kalan-prefix">€</span><input type="number" id="fa-kalan" placeholder="Otomatik" readonly class="sm-money-input sm-readonly" style="color:var(--blue2)"></div>
+          </div>
         </div>
       </div>
 
@@ -1659,11 +1697,17 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
       <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(190,138,32,0.15)">
         <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);margin-bottom:10px">⛵ Tekne Ödemeleri</div>
         <div class="form-grid">
-          <div class="fg"><label>Tekne Toplam Ödeme</label><input type="number" id="fa-todeme" placeholder="0" oninput="calcAcenteAll()"></div>
-          <div class="fg"><label>Tekneye Ön Ödeme</label><input type="number" id="fa-ton" placeholder="0" oninput="calcAcenteAll()"></div>
-          <div class="fg"><label>Tekneye Kalan</label><input type="number" id="fa-tkalan" placeholder="Otomatik" readonly class="calc-result" style="color:var(--gold2)"></div>
+          <div class="fg"><label>Tekne Toplam Ödeme</label>
+            <div class="sm-money-wrap"><span class="sm-currency" id="fa-todeme-prefix">€</span><input type="number" id="fa-todeme" placeholder="0.00" oninput="calcAcenteAll()" class="sm-money-input"></div>
+          </div>
+          <div class="fg"><label>Tekneye Ön Ödeme</label>
+            <div class="sm-money-wrap"><span class="sm-currency sm-currency-teal" id="fa-ton-prefix">€</span><input type="number" id="fa-ton" placeholder="0.00" oninput="calcAcenteAll()" class="sm-money-input"></div>
+          </div>
+          <div class="fg"><label>Tekneye Kalan</label>
+            <div class="sm-money-wrap"><span class="sm-currency sm-currency-gold" id="fa-tkalan-prefix">€</span><input type="number" id="fa-tkalan" placeholder="Otomatik" readonly class="sm-money-input sm-readonly" style="color:var(--gold2)"></div>
+          </div>
           <div class="fg"><label>💰 Şirket Kârı (Otomatik)</label>
-            <input type="number" id="fa-kar" placeholder="Toplam − Tekne Ödemesi" style="color:var(--green2);font-weight:600" readonly class="calc-result">
+            <div class="sm-money-wrap"><span class="sm-currency sm-currency-green" id="fa-kar-prefix">€</span><input type="number" id="fa-kar" placeholder="Toplam − Tekne" class="sm-money-input sm-readonly" style="color:var(--green2);font-weight:600" readonly></div>
           </div>
         </div>
       </div>
@@ -1681,10 +1725,16 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
 <div class="modal-bg" id="modal-gider">
   <div class="modal" style="max-width:440px">
     <div class="modal-hd">
-      <div class="modal-title">Gider Ekle</div>
+      <div class="modal-title" id="modal-gider-title">Gider Ekle</div>
       <button class="modal-close" onclick="closeModal('modal-gider')">✕</button>
     </div>
     <div class="form-grid">
+      <div class="fg"><label>Gider Türü</label>
+        <select id="fg-tip">
+          <option value="simay">⛵ Simay Tekneleri</option>
+          <option value="acenta">🤝 Acenta</option>
+        </select>
+      </div>
       <div class="fg"><label>Tarih *</label><input type="date" id="fg-tarih"></div>
       <div class="fg"><label>Kategori</label>
         <select id="fg-kat">
@@ -1991,7 +2041,9 @@ async function renderPage(pg){
   else if(pg==='rezervasyon') await renderRezervasyonPage();
   else if(pg==='simay') { buildSimayFilters(); await renderSimayKPIs(); await renderSimayTable(); }
   else if(pg==='acente') { buildAcenteFilters(); await renderAcenteKPIs(); await renderAcenteTable(); }
-  else if(pg==='gider') await renderGider();
+  else if(pg==='gider') await renderGider('all');
+  else if(pg==='gider-simay') await renderGider('simay');
+  else if(pg==='gider-acenta') await renderGider('acenta');
   else if(pg==='raporlar') await renderRaporlar();
   else if(pg==='fatura') await renderFatura();
   else if(pg==='ayarlar') await loadSettings();
@@ -2031,11 +2083,12 @@ function toast(msg, type='ok'){
 // ═══════════════════════════════════════════════════════════════════
 // Title case — her kelimenin ilk harfini büyük yap
 function applyTitleCase(el){
-  // Her kelimenin (boşluk sonrası) ilk harfi büyük, geri kalanı dokunulmaz
+  // Her kelimenin ilk harfi büyük, geri kalanı küçük (Caps Lock koruması)
   const pos = el.selectionStart;
   const val = el.value;
-  // Sadece boşluktan sonraki ilk harf büyük yapılır; diğer harflere dokunulmaz
-  const result = val.replace(/(^|\s)(\S)/g, (m, space, ch) => space + ch.toLocaleUpperCase('tr-TR'));
+  const result = val.replace(/\S+/g, w =>
+    w.charAt(0).toLocaleUpperCase('tr-TR') + w.slice(1).toLocaleLowerCase('tr-TR')
+  );
   if(result !== val){
     el.value = result;
     try{ el.setSelectionRange(pos, pos); } catch(e){}
@@ -2212,7 +2265,7 @@ function editAcenteForm(id){
   const fb=document.getElementById('fa-banka'); if(fb){ buildBankaSelect('fa-banka'); fb.value=r.banka||''; }
   const ff=document.getElementById('fa-fatura-durum'); if(ff) ff.value=r.faturaDurum||'kesilmedi';
   buildSorumluSelect();
-  openModal('modal-acente','Acente — Kaydı Düzenle');
+  openModal('modal-acente','Acenta — Kaydı Düzenle');
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2317,6 +2370,7 @@ async function saveGider(){
   const tutarEur = para === 'TRY' && kur > 0 ? tutarRaw / kur : tutarRaw;
   const r = {
     id: id||uid(), ts: Date.now(),
+    tip: document.getElementById('fg-tip')?.value || 'simay',
     tarih: document.getElementById('fg-tarih').value,
     kat: document.getElementById('fg-kat').value,
     aciklama: document.getElementById('fg-acik').value.trim(),
@@ -2331,6 +2385,7 @@ async function saveGider(){
   await dbSave(DB); closeModal('modal-gider');
   ['fg-tarih','fg-acik','fg-tutar','fg-id','fg-kur','fg-eur'].forEach(i=>{const el=document.getElementById(i);if(el)el.value=''});
   const fp=document.getElementById('fg-para');if(fp)fp.value='EUR';
+  const ft=document.getElementById('fg-tip');if(ft)ft.value='simay';
   toggleGiderPara();
   await updateSidebar(); await refreshCurrentPage();
 }
@@ -2521,7 +2576,7 @@ async function renderDashboard(){
     </div>
     <div class="kpi" style="--ka:linear-gradient(90deg,#be8a20,#e8b84b);--kc:var(--gold2)">
       <span class="kpi-icon">🤝</span>
-      <div class="kpi-lbl">Acente Kârı</div>
+      <div class="kpi-lbl">Acenta Kârı</div>
       <div class="kpi-val">${money(acenteT)}</div>
       <div class="kpi-sub">${DB.acente.length} rezervasyon</div>
     </div>
@@ -2710,7 +2765,7 @@ function buildAcenteFilters(){
 async function renderAcenteKPIs(){
   DB=await dbLoad();
   const allAcente = DB.acente.filter(r=>r.giris && r.giris.startsWith(String(activeYil)));
-  const data = acenteFilter==='all' ? allAcente : allAcente.filter(r=>(r.sorumlu||'').trim()===acenteFilter);
+  const data = acenteFilter==='all' ? allAcenta : allAcente.filter(r=>(r.sorumlu||'').trim()===acenteFilter);
   const karT=data.reduce((a,r)=>a+r.kar,0);
   const bedelT=data.reduce((a,r)=>a+r.bedel,0);
   document.getElementById('acente-kpis').innerHTML=`
@@ -2760,25 +2815,27 @@ async function renderAcenteTable(){
 // ═══════════════════════════════════════════════════════════════════
 //  GİDER PAGE
 // ═══════════════════════════════════════════════════════════════════
-async function renderGider(){
-  DB=await dbLoad();
-  const data=[...DB.giderler].sort((a,b)=>new Date(b.tarih)-new Date(a.tarih));
-  const gT=data.reduce((a,r)=>a+r.tutar,0);
-  const buAy=new Date().getMonth()+1;
-  const buAyG=data.filter(r=>getMonth(r.tarih)===buAy).reduce((a,r)=>a+r.tutar,0);
-  document.getElementById('gider-kpis').innerHTML=`
-    <div class="kpi" style="--ka:linear-gradient(90deg,#b83030,#f87171);--kc:var(--red2)">
-      <div class="kpi-lbl">Toplam Gider</div><div class="kpi-val">${money(gT)}</div><div class="kpi-sub">${data.length} kalem</div></div>
-    <div class="kpi" style="--ka:linear-gradient(90deg,#e17055,#ffeaa7);--kc:#ffd166">
-      <div class="kpi-lbl">Bu Ay Gider</div><div class="kpi-val">${money(buAyG)}</div><div class="kpi-sub">${MONTHS_FULL[buAy]}</div></div>
-    `;
-  const tbody=document.getElementById('gider-tbody');
-  const empty=document.getElementById('gider-empty');
-  if(!data.length){ tbody.innerHTML=''; empty.style.display=''; return; }
-  empty.style.display='none';
+function openGiderModal(tipOnceden){
+  // Formu temizle
+  ['fg-tarih','fg-acik','fg-tutar','fg-id','fg-kur','fg-eur'].forEach(i=>{
+    const el=document.getElementById(i); if(el) el.value='';
+  });
+  const fp=document.getElementById('fg-para'); if(fp) fp.value='EUR';
+  const ft=document.getElementById('fg-tip');
+  if(ft) ft.value = tipOnceden || 'simay';
+  toggleGiderPara();
+  openModal('modal-gider', tipOnceden==='acenta' ? 'Acenta Gider Ekle' : 'Simay Gider Ekle');
+}
+
+function renderGiderTable(data, tbodyId, emptyId, showTip=false){
+  const tbody=document.getElementById(tbodyId);
+  const empty=document.getElementById(emptyId);
+  if(!data.length){ if(tbody)tbody.innerHTML=''; if(empty)empty.style.display=''; return; }
+  if(empty)empty.style.display='none';
   tbody.innerHTML=data.map((r,i)=>`
     <tr>
       <td style="color:var(--ink3)">${i+1}</td>
+      ${showTip?`<td><span class="badge" style="${r.tip==='acenta'?'background:rgba(190,138,32,.15);color:var(--gold2);border:1px solid rgba(190,138,32,.25)':'background:rgba(11,122,110,.15);color:var(--teal2);border:1px solid rgba(11,122,110,.25)'}">${r.tip==='acenta'?'🤝 Acenta':'⛵ Simay'}</span></td>`:''}
       <td>${fmtDate(r.tarih)}</td>
       <td><span class="badge b-gider">${r.kat}</span></td>
       <td style="color:var(--ink2)">${r.aciklama||'—'}</td>
@@ -2787,6 +2844,52 @@ async function renderGider(){
         <button class="btn btn-danger btn-xs" onclick="deleteRecord('giderler','${r.id}')">Sil</button>
       </td>
     </tr>`).join('');
+}
+
+async function renderGider(tip='all'){
+  DB=await dbLoad();
+  const all=[...DB.giderler].sort((a,b)=>new Date(b.tarih)-new Date(a.tarih));
+  const simayG = all.filter(r=>!r.tip || r.tip==='simay');
+  const acentaG = all.filter(r=>r.tip==='acenta');
+  const buAy=new Date().getMonth()+1;
+
+  if(tip==='all'){
+    // Toplam page
+    const gT=all.reduce((a,r)=>a+r.tutar,0);
+    const simayT=simayG.reduce((a,r)=>a+r.tutar,0);
+    const acentaT=acentaG.reduce((a,r)=>a+r.tutar,0);
+    document.getElementById('gider-kpis').innerHTML=`
+      <div class="kpi" style="--ka:linear-gradient(90deg,#b83030,#f87171);--kc:var(--red2)">
+        <span class="kpi-icon">📊</span>
+        <div class="kpi-lbl">Toplam Gider</div><div class="kpi-val">${money(gT)}</div><div class="kpi-sub">${all.length} kalem</div></div>
+      <div class="kpi" style="--ka:linear-gradient(90deg,#0b7a6e,#18b4a2);--kc:var(--teal2)">
+        <span class="kpi-icon">⛵</span>
+        <div class="kpi-lbl">Simay Giderleri</div><div class="kpi-val">${money(simayT)}</div><div class="kpi-sub">${simayG.length} kalem</div></div>
+      <div class="kpi" style="--ka:linear-gradient(90deg,#be8a20,#e8b84b);--kc:var(--gold2)">
+        <span class="kpi-icon">🤝</span>
+        <div class="kpi-lbl">Acenta Giderleri</div><div class="kpi-val">${money(acentaT)}</div><div class="kpi-sub">${acentaG.length} kalem</div></div>`;
+    renderGiderTable(all, 'gider-tbody', 'gider-empty', true);
+  } else if(tip==='simay'){
+    const gT=simayG.reduce((a,r)=>a+r.tutar,0);
+    const buAyG=simayG.filter(r=>getMonth(r.tarih)===buAy).reduce((a,r)=>a+r.tutar,0);
+    document.getElementById('gider-simay-kpis').innerHTML=`
+      <div class="kpi" style="--ka:linear-gradient(90deg,#0b7a6e,#18b4a2);--kc:var(--teal2)">
+        <span class="kpi-icon">⛵</span>
+        <div class="kpi-lbl">Simay Toplam Gider</div><div class="kpi-val">${money(gT)}</div><div class="kpi-sub">${simayG.length} kalem</div></div>
+      <div class="kpi" style="--ka:linear-gradient(90deg,#e17055,#ffeaa7);--kc:#ffd166">
+        <div class="kpi-lbl">Bu Ay</div><div class="kpi-val">${money(buAyG)}</div><div class="kpi-sub">${MONTHS_FULL[buAy]}</div></div>`;
+    renderGiderTable(simayG, 'gider-simay-tbody', 'gider-simay-empty');
+  } else if(tip==='acenta'){
+    const gT=acentaG.reduce((a,r)=>a+r.tutar,0);
+    const buAyG=acentaG.filter(r=>getMonth(r.tarih)===buAy).reduce((a,r)=>a+r.tutar,0);
+    document.getElementById('gider-acenta-kpis').innerHTML=`
+      <div class="kpi" style="--ka:linear-gradient(90deg,#be8a20,#e8b84b);--kc:var(--gold2)">
+        <span class="kpi-icon">🤝</span>
+        <div class="kpi-lbl">Acenta Toplam Gider</div><div class="kpi-val">${money(gT)}</div><div class="kpi-sub">${acentaG.length} kalem</div></div>
+      <div class="kpi" style="--ka:linear-gradient(90deg,#e17055,#ffeaa7);--kc:#ffd166">
+        <div class="kpi-lbl">Bu Ay</div><div class="kpi-val">${money(buAyG)}</div><div class="kpi-sub">${MONTHS_FULL[buAy]}</div></div>`;
+    renderGiderTable(acentaG, 'gider-acenta-tbody', 'gider-acenta-empty');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2881,7 +2984,7 @@ async function renderRezervasyonPage(){
                 <div style="font-size:11px;color:var(--${isAcente?'gold2':'teal2'});margin-top:2px">${isAcente?'🤝':'⛵'} ${r.tekne}</div>
               </div>
               <span class="badge ${isAcente?'':'b-simay'}" style="${isAcente?'background:rgba(190,138,32,.15);color:var(--gold2);border:1px solid rgba(190,138,32,.25)':''}">
-                ${isAcente?'Acente':'Simay'}
+                ${isAcente?'Acenta':'Simay'}
               </span>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
@@ -2914,6 +3017,8 @@ async function renderRaporlar(){
   const simayT=DB.simay.reduce((a,r)=>a+r.bedel,0);
   const acenteT=DB.acente.reduce((a,r)=>a+r.kar,0);
   const giderT=DB.giderler.reduce((a,r)=>a+r.tutar,0);
+  const giderSimay=DB.giderler.filter(r=>!r.tip||r.tip==='simay').reduce((a,r)=>a+r.tutar,0);
+  const giderAcenta=DB.giderler.filter(r=>r.tip==='acenta').reduce((a,r)=>a+r.tutar,0);
   const toplam=simayT+acenteT;
   const net=toplam-giderT;
   const pct=DB.cfg.hedef>0?(toplam/DB.cfg.hedef*100).toFixed(1):0;
@@ -2922,7 +3027,7 @@ async function renderRaporlar(){
   document.getElementById('net-strip').innerHTML=`
     <div class="ns-item"><div class="ns-lbl">Toplam Gelir</div><div class="ns-val" style="color:var(--gold2)">${money(toplam)}</div><div class="ns-sub">${DB.simay.length+DB.acente.length} toplam satış</div></div>
     <div class="ns-div"></div>
-    <div class="ns-item"><div class="ns-lbl">Gider</div><div class="ns-val" style="color:var(--red2)">−${money(giderT)}</div><div class="ns-sub">${DB.giderler.length} kalem</div></div>
+    <div class="ns-item"><div class="ns-lbl">Gider (Toplam)</div><div class="ns-val" style="color:var(--red2)">−${money(giderT)}</div><div class="ns-sub"><span style="color:var(--teal3)">⛵ ${money(giderSimay)}</span> · <span style="color:var(--gold3)">🤝 ${money(giderAcenta)}</span></div></div>
     <div class="ns-div"></div>
     <div class="ns-item"><div class="ns-lbl">Net Kâr</div><div class="ns-val" style="color:${net>=0?'var(--green2)':'var(--red2)'}">${money(net)}</div><div class="ns-sub">Marj: ${toplam>0?(net/toplam*100).toFixed(1):0}%</div></div>
     <div class="ns-div"></div>
@@ -2955,7 +3060,7 @@ async function renderRaporlar(){
       <div class="dl-pct" style="color:var(--teal2)">${(sPct*100).toFixed(1)}%</div>
     </div>
     <div class="dl-item"><div class="dl-bar" style="background:linear-gradient(180deg,#e8b84b,#be8a20)"></div>
-      <div class="dl-info"><div class="dl-name">Acente</div><div class="dl-sub">${money(acenteT)} · ${DB.acente.length} res.</div></div>
+      <div class="dl-info"><div class="dl-name">Acenta</div><div class="dl-sub">${money(acenteT)} · ${DB.acente.length} res.</div></div>
       <div class="dl-pct" style="color:var(--gold2)">${(aPct*100).toFixed(1)}%</div>
     </div>`;
 
@@ -2963,15 +3068,15 @@ async function renderRaporlar(){
   const ayMap={};
   DB.simay.forEach(r=>{const m=getMonth(r.giris);if(m){ayMap[m]=ayMap[m]||{s:0,a:0,g:0};ayMap[m].s+=r.bedel}});
   DB.acente.forEach(r=>{const m=getMonth(r.giris);if(m){ayMap[m]=ayMap[m]||{s:0,a:0,g:0};ayMap[m].a+=r.kar}});
-  DB.giderler.forEach(r=>{const m=getMonth(r.tarih);if(m){ayMap[m]=ayMap[m]||{s:0,a:0,g:0};ayMap[m].g+=r.tutar}});
+  DB.giderler.forEach(r=>{const m=getMonth(r.tarih);if(m){ayMap[m]=ayMap[m]||{s:0,a:0,gs:0,ga:0};if(r.tip==='acenta')ayMap[m].ga+=r.tutar;else ayMap[m].gs+=r.tutar;}});
   document.getElementById('rapor-aylik-tbody').innerHTML = Object.keys(ayMap).sort((a,b)=>+a-+b).map(m=>{
-    const d=ayMap[m]; const t=d.s+d.a; const n=t-d.g;
+    const d=ayMap[m]; const t=d.s+d.a; const g=(d.gs||0)+(d.ga||0); const n=t-g;
     return `<tr>
       <td class="fw">${MONTHS_FULL[m]}</td>
       <td style="color:var(--teal2)">${money(d.s)}</td>
       <td style="color:var(--gold2)">${money(d.a)}</td>
       <td class="fw">${money(t)}</td>
-      <td style="color:var(--red2)">${money(d.g)}</td>
+      <td style="color:var(--red2)">${money((d.gs||0)+(d.ga||0))}<div style="font-size:9px;color:var(--ink3)">⛵${money(d.gs||0)} 🤝${money(d.ga||0)}</div></td>
       <td class="fw" style="color:${n>=0?'var(--green2)':'var(--red2)'}">${money(n)}</td>
     </tr>`;
   }).join('');
@@ -2998,7 +3103,7 @@ async function renderRaporlar(){
       <div class="hbar-detail">${v.n} satış · %${topS?(v.k/topS*100).toFixed(1):'0'} pay</div>
     </div>`).join('') || '<div class="empty-state"><div class="es-text">Veri yok</div></div>';
 
-  // Acente bazlı Simay satışları
+  // Acenta bazlı Simay satışları
   const acMap={};
   DB.simay.forEach(r=>{
     const a = (r.acente||'').trim();
@@ -3304,7 +3409,7 @@ function showSimayDetail(id){
       <div class="detail-item"><div class="detail-lbl">Çıkış Tarihi</div><div class="detail-val">${fmtDate(r.cikis)}</div></div>
       <div class="detail-item"><div class="detail-lbl">Süre</div><div class="detail-val">${gun>0?gun+' gece':'—'}</div></div>
       <div class="detail-item"><div class="detail-lbl">Satış Sorumlusu</div><div class="detail-val">${r.sorumlu||'—'}</div></div>
-      ${r.acente?`<div class="detail-item"><div class="detail-lbl">Acente</div><div class="detail-val"><span class="badge" style="background:rgba(108,92,231,.18);color:#c39bd3;border:1px solid rgba(108,92,231,.3)">${r.acente}</span></div></div>`:''}
+      ${r.acente?`<div class="detail-item"><div class="detail-lbl">Acenta</div><div class="detail-val"><span class="badge" style="background:rgba(108,92,231,.18);color:#c39bd3;border:1px solid rgba(108,92,231,.3)">${r.acente}</span></div></div>`:''}
     </div>
     <div class="detail-section">Ödeme Bilgileri</div>
     <div class="detail-grid">
@@ -3715,6 +3820,36 @@ function exportFaturaCSV(){
   toast('Fatura raporu indirildi ✓');
 }
 
+
+
+// Acenta: giriş tarihi seçilince bitiş tarihini aynı ayın ilk gününe at + min ayarla
+function onAcentaGirisChange(val){
+  if(!val) return;
+  const cEl = document.getElementById('fa-cikis');
+  cEl.min = val;
+  // Bitiş tarihini aynı aya yönlendir: ay bitimine set et
+  const d = new Date(val);
+  const yil = d.getFullYear();
+  const ay = d.getMonth(); // 0-indexed
+  const sonGun = new Date(yil, ay+1, 0).getDate();
+  const ayStr = String(ay+1).padStart(2,'0');
+  // ay sonu değil, giriş tarihini default olarak ata (kullanıcı kendisi seçer)
+  // Sadece min=giris, ve ay=giris ayına odaklan
+  if(!cEl.value || cEl.value < val){
+    // Set to last day of same month as a default suggestion
+    cEl.value = `${yil}-${ayStr}-${String(sonGun).padStart(2,'0')}`;
+  }
+  setTimeout(()=>cEl.focus(), 50);
+}
+
+// Acenta para birimi değişince prefix güncelleşir
+function onAcentaParaDegis(){
+  const para = document.getElementById('fa-para')?.value || 'EUR';
+  const simge = para==='EUR'?'€':para==='USD'?'$':'₺';
+  ['fa-bedel-prefix','fa-on-prefix','fa-kalan-prefix','fa-todeme-prefix','fa-ton-prefix','fa-tkalan-prefix','fa-kar-prefix'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.textContent=simge;
+  });
+}
 // ═══════════════════════════════════════════════════════════════════
 //  WINDOW EXPORTS (module scope fix)
 // ═══════════════════════════════════════════════════════════════════
@@ -3746,6 +3881,7 @@ window.showSimayDetail = showSimayDetail;
 window.showAcenteDetail = showAcenteDetail;
 window.doLogout = doLogout;
 window.switchYear = switchYear;
+window.onMisafirInput = onMisafirInput;
 window.addSorumlu = addSorumlu;
 window.removeSorumlu = removeSorumlu;
 window.toggleTheme = toggleTheme;
@@ -3753,6 +3889,9 @@ window.toggleGiderPara = toggleGiderPara;
 window.calcGiderEur = calcGiderEur;
 window.fetchKur = fetchKur;
 window.saveFatura = saveFatura;
+window.openGiderModal = openGiderModal;
+window.onAcentaGirisChange = onAcentaGirisChange;
+window.onAcentaParaDegis = onAcentaParaDegis;
 window.editFaturaForm = editFaturaForm;
 window.calcFaturaKdv = calcFaturaKdv;
 window.calcFaturaKalan = calcFaturaKalan;
