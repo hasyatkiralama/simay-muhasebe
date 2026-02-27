@@ -1335,12 +1335,6 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
       </div>
       <a href="https://console.firebase.google.com/project/simay-muhasebe/authentication/users" target="_blank" class="btn btn-ghost btn-sm">Firebase Kullanıcıları →</a>
     </div>
-    <div style="border-top:1px solid var(--border);margin:20px 0"></div>
-    <div class="panel-title" style="margin-bottom:14px">Veri Yönetimi</div>
-    <div class="setting-row">
-      <div class="sr-info"><div class="sr-lbl">Tüm Verileri Sıfırla</div><div class="sr-sub">Tüm satış ve gider kayıtları silinir</div></div>
-      <button class="btn btn-danger btn-sm" onclick="resetData()">Sıfırla</button>
-    </div>
   </div>
 </div>
 
@@ -1407,6 +1401,26 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
 </main><!-- /main -->
 </div><!-- /app -->
 
+
+<!-- ═══════════ ŞİFRE ONAY MODAL ═══════════ -->
+<div class="modal-bg" id="modal-sifre-onay">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-hd">
+      <div class="modal-title" id="sifre-modal-title">🔐 Şifre Onayı Gerekli</div>
+      <button class="modal-close" onclick="closeModal('modal-sifre-onay')">✕</button>
+    </div>
+    <div style="color:var(--ink2);font-size:12px;margin-bottom:16px;line-height:1.6" id="sifre-modal-desc">Bu işlemi gerçekleştirmek için şifrenizi giriniz.</div>
+    <div class="fg" style="margin-bottom:8px">
+      <label>Şifreniz</label>
+      <input type="password" id="sifre-onay-input" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter') confirmSifreOnay()">
+    </div>
+    <div class="login-error" id="sifre-onay-error" style="margin-bottom:0;border-radius:7px;padding:8px 12px">Şifre hatalı. Lütfen tekrar deneyin.</div>
+    <div class="form-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-sifre-onay')">Vazgeç</button>
+      <button class="btn btn-danger" id="sifre-onay-btn" onclick="confirmSifreOnay()">🗑 Sil / Onayla</button>
+    </div>
+  </div>
+</div>
 
 <!-- ═══════════ GİRİŞ EKRANI ═══════════ -->
 <div id="login-screen">
@@ -2058,6 +2072,23 @@ function today(){ return new Date().toISOString().split('T')[0]; }
 document.querySelectorAll('.sb-item').forEach(item => {
   item.addEventListener('click', async () => {
     const pg = item.dataset.page;
+    if(pg === 'ayarlar'){
+      // Ayarlar sayfasına giriş için şifre doğrula
+      const prevActive = document.querySelector('.sb-item.active');
+      const prevPage = prevActive ? prevActive.dataset.page : 'dashboard';
+      await sifreOnay(
+        '⚙️ Ayarlar sayfasına erişmek için şifrenizi doğrulayın.',
+        '🔓 Ayarlara Gir',
+        async () => {
+          document.querySelectorAll('.sb-item').forEach(i=>i.classList.remove('active'));
+          item.classList.add('active');
+          document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+          document.getElementById('page-ayarlar').classList.add('active');
+          await loadSettings();
+        }
+      );
+      return;
+    }
     document.querySelectorAll('.sb-item').forEach(i=>i.classList.remove('active'));
     item.classList.add('active');
     document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -2423,11 +2454,74 @@ async function saveGider(){
   await updateSidebar(); await refreshCurrentPage();
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  ŞİFRE ONAY SİSTEMİ
+// ═══════════════════════════════════════════════════════════════════
+let _sifreOnayCallback = null;
+let _sifreOnayBtnLabel = '🔓 Onayla';
+
+async function sifreOnay(desc, btnLabel, callback){
+  _sifreOnayCallback = callback;
+  _sifreOnayBtnLabel = btnLabel;
+  document.getElementById('sifre-modal-desc').textContent = desc;
+  document.getElementById('sifre-onay-btn').textContent = btnLabel;
+  document.getElementById('sifre-onay-input').value = '';
+  document.getElementById('sifre-onay-error').classList.remove('show');
+  document.getElementById('modal-sifre-onay').classList.add('open');
+  setTimeout(()=>document.getElementById('sifre-onay-input').focus(), 120);
+}
+
+async function confirmSifreOnay(){
+  const pass = document.getElementById('sifre-onay-input').value;
+  const err = document.getElementById('sifre-onay-error');
+  const btn = document.getElementById('sifre-onay-btn');
+  if(!pass){ err.textContent='Şifre boş bırakılamaz.'; err.classList.add('show'); return; }
+  
+  btn.disabled = true;
+  btn.textContent = '⏳ Doğrulanıyor...';
+  err.classList.remove('show');
+
+  try {
+    // Compat SDK ile mevcut kullanıcıyı yeniden doğrula
+    const user = firebase.auth().currentUser;
+    if(!user){ err.textContent='Oturum bulunamadı. Lütfen tekrar giriş yapın.'; err.classList.add('show'); btn.disabled=false; btn.textContent=_sifreOnayBtnLabel; return; }
+    const credential = firebase.auth.EmailAuthProvider.credential(user.email, pass);
+    await user.reauthenticateWithCredential(credential);
+    // Başarılı
+    document.getElementById('modal-sifre-onay').classList.remove('open');
+    document.getElementById('sifre-onay-input').value = '';
+    btn.disabled = false;
+    btn.textContent = _sifreOnayBtnLabel;
+    if(_sifreOnayCallback) await _sifreOnayCallback();
+    _sifreOnayCallback = null;
+  } catch(e){
+    const msgs = {
+      'auth/wrong-password': 'Şifre hatalı. Lütfen tekrar deneyin.',
+      'auth/invalid-credential': 'Şifre hatalı. Lütfen tekrar deneyin.',
+      'auth/too-many-requests': 'Çok fazla deneme. Lütfen bir süre bekleyin.',
+      'auth/network-request-failed': 'Ağ hatası. İnternet bağlantınızı kontrol edin.',
+    };
+    err.textContent = msgs[e.code] || ('Hata: ' + (e.message || e.code));
+    err.classList.add('show');
+    btn.disabled = false;
+    btn.textContent = _sifreOnayBtnLabel;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  SİL İŞLEMLERİ
+// ═══════════════════════════════════════════════════════════════════
 async function deleteRecord(type, id){
-  if(!confirm('Bu kaydı silmek istediğinize emin misiniz?')) return;
-  DB[type] = DB[type].filter(x=>x.id!==id);
-  await dbSave(DB); toast('Kayıt silindi','info');
-  await updateSidebar(); await refreshCurrentPage();
+  const labels = {simay:'Simay satış kaydı', acente:'Acente satış kaydı', giderler:'Gider kaydı', faturalar:'Fatura kaydı'};
+  await sifreOnay(
+    `"${labels[type]||'Kayıt'}" silinecek. Bu işlem geri alınamaz.`,
+    '🗑 Kaydı Sil',
+    async () => {
+      DB[type] = DB[type].filter(x=>x.id!==id);
+      await dbSave(DB); toast('Kayıt silindi','info');
+      await updateSidebar(); await refreshCurrentPage();
+    }
+  );
 }
 
 async function refreshCurrentPage(){
@@ -3349,12 +3443,16 @@ async function saveSettings(){
   toast('Ayarlar kaydedildi ✓');
 }
 async function resetData(){
-  if(!confirm('TÜM VERİLER SİLİNECEK! Emin misiniz?')) return;
-  if(!confirm('Son kez onaylayın — bu işlem geri alınamaz.')) return;
-  const cfg=DB.cfg;
-  DB=defaultDB(); DB.cfg=cfg;
-  await dbSave(DB); await updateSidebar();
-  toast('Tüm veriler sıfırlandı','info');
+  await sifreOnay(
+    '⚠️ TÜM VERİLER SİLİNECEK! Tüm satış ve gider kayıtları kalıcı olarak silinir. Bu işlem geri alınamaz.',
+    '🗑 Tüm Verileri Sıfırla',
+    async () => {
+      const cfg=DB.cfg;
+      DB=defaultDB(); DB.cfg=cfg;
+      await dbSave(DB); await updateSidebar();
+      toast('Tüm veriler sıfırlandı','info');
+    }
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -3618,13 +3716,18 @@ async function addSorumlu(){
 }
 
 async function removeSorumlu(idx){
-  if(!confirm('Bu sorumluyu silmek istiyor musunuz?')) return;
-  if(!DB.cfg.sorumlular) DB.cfg.sorumlular = ['Fatih Tok','Yasin Yenigün'];
-  DB.cfg.sorumlular.splice(idx, 1);
-  await dbSave(DB);
-  renderSorumluSettings();
-  buildSorumluSelect();
-  toast('Sorumlu silindi','info');
+  await sifreOnay(
+    'Bu sorumlu listeden silinecek.',
+    '🗑 Sorumluyu Sil',
+    async () => {
+      if(!DB.cfg.sorumlular) DB.cfg.sorumlular = ['Fatih Tok','Yasin Yenigün'];
+      DB.cfg.sorumlular.splice(idx, 1);
+      await dbSave(DB);
+      renderSorumluSettings();
+      buildSorumluSelect();
+      toast('Sorumlu silindi','info');
+    }
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -3728,9 +3831,15 @@ async function addBanka(){
   await dbSave(DB); loadBankaSettings(); buildAllBankaSelects(); toast('Banka eklendi ✓');
 }
 async function removeBanka(idx){
-  if(!DB.cfg.bankalar) DB.cfg.bankalar = getBankalar();
-  DB.cfg.bankalar.splice(idx,1);
-  await dbSave(DB); loadBankaSettings(); buildAllBankaSelects(); toast('Banka silindi','info');
+  await sifreOnay(
+    'Bu banka listeden silinecek.',
+    '🗑 Bankayı Sil',
+    async () => {
+      if(!DB.cfg.bankalar) DB.cfg.bankalar = getBankalar();
+      DB.cfg.bankalar.splice(idx,1);
+      await dbSave(DB); loadBankaSettings(); buildAllBankaSelects(); toast('Banka silindi','info');
+    }
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -4085,6 +4194,7 @@ window.calcFaturaKalan = calcFaturaKalan;
 window.exportFaturaCSV = exportFaturaCSV;
 window.addBanka = addBanka;
 window.removeBanka = removeBanka;
+window.confirmSifreOnay = confirmSifreOnay;
 
 document.addEventListener('DOMContentLoaded', ()=>{
   // Uygulama başlangıçta gizli — onAuthStateChanged yönetir
