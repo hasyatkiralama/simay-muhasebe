@@ -904,6 +904,10 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
     </div>
 
     <div class="sb-section">Satış Kayıtları</div>
+    <div class="sb-item" data-page="tum-satislar">
+      <span class="si">📋</span>Tüm Satışlar
+      <span class="sb-badge" id="badge-tum">0</span>
+    </div>
     <div class="sb-item" data-page="rezervasyon">
       <span class="si">🗓</span>Rezervasyon Takvim
     </div>
@@ -1102,7 +1106,7 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
       <button class="btn btn-teal" onclick="openModal('modal-simay','Simay Tekneleri — Yeni Satış')">+ Yeni Ekle</button>
     </div>
   </div>
-  <div class="kpi-grid" id="simay-kpis" style="grid-template-columns:repeat(3,1fr)"></div>
+  <div class="kpi-grid" id="simay-kpis" style="grid-template-columns:repeat(5,1fr)"></div>
   <div class="filter-bar" id="simay-filters"></div>
   <div class="search-wrap">
     <span class="search-icon">🔍</span>
@@ -1372,6 +1376,33 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
     </div>
   </div>
   <div id="fatura-empty" style="display:none" class="empty-state"><div class="es-icon">🧾</div><div class="es-text">Henüz fatura kaydı yok.</div></div>
+</div>
+
+
+<!-- ───── TÜM SATIŞLAR ───── -->
+<div class="page" id="page-tum-satislar">
+  <div class="ph">
+    <div class="ph-left"><h2>Tüm Satışlar</h2><p id="tum-satislar-sub">Simay + Acenta · Tüm tutarlar €Euro cinsinden</p></div>
+    <div class="ph-actions">
+      <button class="btn btn-ghost btn-sm" onclick="exportTumSatislarCSV()">⬇ İndir</button>
+    </div>
+  </div>
+  <div class="kpi-grid" id="tum-kpis" style="grid-template-columns:repeat(4,1fr)"></div>
+  <div class="search-wrap">
+    <span class="search-icon">🔍</span>
+    <input class="search-input" id="tum-search" placeholder="Misafir, tekne veya sorumlu ara..." oninput="renderTumSatislar()">
+  </div>
+  <div class="tbl-outer"><div class="tbl-scroll">
+    <table>
+      <thead><tr>
+        <th>#</th><th>Tür</th><th>Misafir</th><th>Tekne</th>
+        <th>Giriş Limanı</th><th>Çıkış Limanı</th><th>Tur Tarihi</th><th>Süre</th>
+        <th>Sorumlu</th><th>Tutar (€)</th><th>Orijinal</th>
+      </tr></thead>
+      <tbody id="tum-tbody"></tbody>
+    </table>
+  </div></div>
+  <div id="tum-empty" style="display:none" class="empty-state"><div class="es-icon">📋</div><div class="es-text">Henüz satış kaydı yok.</div></div>
 </div>
 
 </main><!-- /main -->
@@ -2038,9 +2069,10 @@ document.querySelectorAll('.sb-item').forEach(item => {
 
 async function renderPage(pg){
   if(pg==='dashboard') await renderDashboard();
+  else if(pg==='tum-satislar') await renderTumSatislar();
   else if(pg==='rezervasyon') await renderRezervasyonPage();
-  else if(pg==='simay') { buildSimayFilters(); await renderSimayKPIs(); await renderSimayTable(); }
-  else if(pg==='acente') { buildAcenteFilters(); await renderAcenteKPIs(); await renderAcenteTable(); }
+  else if(pg==='simay') { simayFilter='all'; buildSimayFilters(); await renderSimayKPIs(); await renderSimayTable(); }
+  else if(pg==='acente') { acenteFilter='all'; buildAcenteFilters(); await renderAcenteKPIs(); await renderAcenteTable(); }
   else if(pg==='gider') await renderGider('all');
   else if(pg==='gider-simay') await renderGider('simay');
   else if(pg==='gider-acenta') await renderGider('acenta');
@@ -2321,6 +2353,7 @@ async function saveSimay(){
   // Otomatik fatura oluştur
   if(isNew){ autoCreateFatura(r, 'simay'); }
   await dbSave(DB); closeModal('modal-simay'); clearSimayForm();
+  simayFilter='all';
   await updateSidebar(); await refreshCurrentPage();
 }
 
@@ -2358,6 +2391,7 @@ async function saveAcente(){
   // Otomatik fatura oluştur
   if(isNew){ autoCreateFatura(r, 'acente'); }
   await dbSave(DB); closeModal('modal-acente'); clearAcenteForm();
+  acenteFilter='all';
   await updateSidebar(); await refreshCurrentPage();
 }
 
@@ -2407,7 +2441,7 @@ async function refreshCurrentPage(){
 // ═══════════════════════════════════════════════════════════════════
 async function updateSidebar(){
   DB = await dbLoad();
-  const simayT = DB.simay.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).reduce((a,r)=>a+r.bedel,0);
+  const simayT = DB.simay.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).reduce((a,r)=>a+(r.kdvliBedel||(r.bedel+(r.kdvTutar||0))),0);
   const acenteT = DB.acente.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).reduce((a,r)=>a+r.kar,0);
   const toplam = simayT + acenteT;
   // Banner ciro
@@ -2416,6 +2450,8 @@ async function updateSidebar(){
   document.getElementById('badge-simay').textContent = DB.simay.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).length;
   const fbadge=document.getElementById('badge-fatura');
   if(fbadge) fbadge.textContent=(DB.faturalar||[]).filter(r=>r.tarih&&r.tarih.startsWith(String(activeYil))).length;
+  const tbadge=document.getElementById('badge-tum');
+  if(tbadge) tbadge.textContent=DB.simay.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).length+DB.acente.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).length;
   document.getElementById('badge-acente').textContent = DB.acente.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).length;
 }
 
@@ -2548,7 +2584,7 @@ function renderFaturaUyarilariSayfa(){
 
 async function renderDashboard(){
   DB = await dbLoad();
-  const simayT = DB.simay.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).reduce((a,r)=>a+r.bedel,0);
+  const simayT = DB.simay.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).reduce((a,r)=>a+(r.kdvliBedel||(r.bedel+(r.kdvTutar||0))),0);
   const acenteT = DB.acente.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).reduce((a,r)=>a+r.kar,0);
   const giderT = DB.giderler.reduce((a,r)=>a+r.tutar,0);
   const toplam = simayT+acenteT;
@@ -2701,15 +2737,42 @@ async function renderSimayKPIs(){
   DB=await dbLoad();
   const allSimay = DB.simay.filter(r=>r.giris && r.giris.startsWith(String(activeYil)));
   const data = simayFilter==='all' ? allSimay : allSimay.filter(r=>r.tekne===simayFilter);
-  const T=data.reduce((a,r)=>a+r.bedel,0);
-  const onT=data.reduce((a,r)=>a+r.on,0);
+  const kdvsizT = data.reduce((a,r)=>a+(r.bedel||0), 0);
+  const kdvT    = data.reduce((a,r)=>a+(r.kdvTutar||0), 0);
+  const kdvliT  = data.reduce((a,r)=>a+(r.kdvliBedel || (r.bedel+(r.kdvTutar||0))), 0);
+  const onT     = data.reduce((a,r)=>a+(r.on||0), 0);
+  const kalanT  = data.reduce((a,r)=>a+(r.kalan||0), 0);
   document.getElementById('simay-kpis').innerHTML=`
     <div class="kpi" style="--ka:linear-gradient(90deg,#0b7a6e,#18b4a2);--kc:var(--teal2)">
-      <div class="kpi-lbl">Toplam Ciro</div><div class="kpi-val">${money(T)}</div><div class="kpi-sub">${data.length} rezervasyon</div></div>
+      <span class="kpi-icon">💶</span>
+      <div class="kpi-lbl">KDV'siz Toplam</div>
+      <div class="kpi-val">${money(kdvsizT)}</div>
+      <div class="kpi-sub">${data.length} rezervasyon</div>
+    </div>
     <div class="kpi" style="--ka:linear-gradient(90deg,#be8a20,#e8b84b);--kc:var(--gold2)">
-      <div class="kpi-lbl">Toplam Ön Ödeme</div><div class="kpi-val">${money(onT)}</div><div class="kpi-sub">Tahsilat</div></div>
+      <span class="kpi-icon">🧾</span>
+      <div class="kpi-lbl">KDV Tutarı</div>
+      <div class="kpi-val">${money(kdvT)}</div>
+      <div class="kpi-sub">Toplam KDV</div>
+    </div>
+    <div class="kpi" style="--ka:linear-gradient(90deg,#156b3a,#22c55e);--kc:var(--green2)">
+      <span class="kpi-icon">✅</span>
+      <div class="kpi-lbl">KDV'li Toplam</div>
+      <div class="kpi-val">${money(kdvliT)}</div>
+      <div class="kpi-sub">Brüt ciro</div>
+    </div>
     <div class="kpi" style="--ka:linear-gradient(90deg,#1a4a7a,#60a5fa);--kc:var(--blue2)">
-      <div class="kpi-lbl">Ort. Tur Bedeli</div><div class="kpi-val">${data.length?money(T/data.length):'€0'}</div><div class="kpi-sub">Rezervasyon başına</div></div>`;
+      <span class="kpi-icon">💳</span>
+      <div class="kpi-lbl">Ön Ödeme</div>
+      <div class="kpi-val">${money(onT)}</div>
+      <div class="kpi-sub">Tahsilat</div>
+    </div>
+    <div class="kpi" style="--ka:linear-gradient(90deg,#b83030,#f87171);--kc:var(--red2)">
+      <span class="kpi-icon">⏳</span>
+      <div class="kpi-lbl">Kalan Tahsilat</div>
+      <div class="kpi-val">${money(kalanT)}</div>
+      <div class="kpi-sub">Bekleyen ödeme</div>
+    </div>`;
 }
 
 async function renderSimayTable(){
@@ -2746,8 +2809,15 @@ async function renderSimayTable(){
       </td>
     </tr>`;
   }).join('');
-  const T = data.reduce((a,r)=>a+r.bedel,0);
-  document.getElementById('simay-total-row').innerHTML = `<span style="font-weight:600;color:var(--teal2)">Toplam: ${money(T)}</span>&nbsp;<span style="color:var(--ink3)">(${data.length} kayıt)</span>`;
+  const T     = data.reduce((a,r)=>a+(r.bedel||0), 0);
+  const kdvliT = data.reduce((a,r)=>a+(r.kdvliBedel||(r.bedel+(r.kdvTutar||0))), 0);
+  document.getElementById('simay-total-row').innerHTML = `
+    <span style="color:var(--ink3)">${data.length} kayıt &nbsp;|&nbsp;</span>
+    <span style="font-weight:600;color:var(--teal2)">KDV'siz: ${money(T)}</span>
+    &nbsp;
+    <span style="color:var(--ink3)">+KDV →</span>
+    &nbsp;
+    <span style="font-weight:700;color:var(--green2)">KDV'li: ${money(kdvliT)}</span>`;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2765,7 +2835,7 @@ function buildAcenteFilters(){
 async function renderAcenteKPIs(){
   DB=await dbLoad();
   const allAcente = DB.acente.filter(r=>r.giris && r.giris.startsWith(String(activeYil)));
-  const data = acenteFilter==='all' ? allAcenta : allAcente.filter(r=>(r.sorumlu||'').trim()===acenteFilter);
+  const data = acenteFilter==='all' ? allAcente : allAcente.filter(r=>(r.sorumlu||'').trim()===acenteFilter);
   const karT=data.reduce((a,r)=>a+r.kar,0);
   const bedelT=data.reduce((a,r)=>a+r.bedel,0);
   document.getElementById('acente-kpis').innerHTML=`
@@ -2827,6 +2897,24 @@ function openGiderModal(tipOnceden){
   openModal('modal-gider', tipOnceden==='acenta' ? 'Acenta Gider Ekle' : 'Simay Gider Ekle');
 }
 
+function editGiderForm(id){
+  const r = DB.giderler.find(x=>x.id===id);
+  if(!r) return;
+  const ft=document.getElementById('fg-tip'); if(ft) ft.value=r.tip||'simay';
+  const fd=document.getElementById('fg-tarih'); if(fd) fd.value=r.tarih||'';
+  const fk=document.getElementById('fg-kat'); if(fk) fk.value=r.kat||'Diğer';
+  const fa=document.getElementById('fg-acik'); if(fa) fa.value=r.aciklama||'';
+  const fp=document.getElementById('fg-para'); if(fp) fp.value=r.paraBirimi||'EUR';
+  toggleGiderPara();
+  // TRY ise orijinal tutarı göster
+  const ft2=document.getElementById('fg-tutar');
+  if(ft2) ft2.value = r.paraBirimi==='TRY' ? (r.tutarOrijinal||r.tutar) : r.tutar;
+  const fkur=document.getElementById('fg-kur'); if(fkur && r.kur) fkur.value=r.kur;
+  const feur=document.getElementById('fg-eur'); if(feur && r.paraBirimi==='TRY') feur.value=r.tutar;
+  const fi=document.getElementById('fg-id'); if(fi) fi.value=r.id;
+  openModal('modal-gider','Gider Düzenle');
+}
+
 function renderGiderTable(data, tbodyId, emptyId, showTip=false){
   const tbody=document.getElementById(tbodyId);
   const empty=document.getElementById(emptyId);
@@ -2841,6 +2929,7 @@ function renderGiderTable(data, tbodyId, emptyId, showTip=false){
       <td style="color:var(--ink2)">${r.aciklama||'—'}</td>
       <td class="mono" style="color:var(--red2)">${money(r.tutar)}${r.paraBirimi==='TRY'?`<span style='font-size:9px;color:var(--ink3);display:block'>₺${Number(r.tutarOrijinal||0).toLocaleString('tr-TR')} / kur:${r.kur?Number(r.kur).toFixed(2):'—'}</span>`:''}</td>
       <td class="td-actions">
+        <button class="btn btn-ghost btn-xs" onclick="editGiderForm('${r.id}')">Düzenle</button>
         <button class="btn btn-danger btn-xs" onclick="deleteRecord('giderler','${r.id}')">Sil</button>
       </td>
     </tr>`).join('');
@@ -3014,7 +3103,7 @@ async function renderRezervasyonPage(){
 // ═══════════════════════════════════════════════════════════════════
 async function renderRaporlar(){
   DB=await dbLoad();
-  const simayT=DB.simay.reduce((a,r)=>a+r.bedel,0);
+  const simayT=DB.simay.reduce((a,r)=>a+(r.kdvliBedel||(r.bedel+(r.kdvTutar||0))),0);
   const acenteT=DB.acente.reduce((a,r)=>a+r.kar,0);
   const giderT=DB.giderler.reduce((a,r)=>a+r.tutar,0);
   const giderSimay=DB.giderler.filter(r=>!r.tip||r.tip==='simay').reduce((a,r)=>a+r.tutar,0);
@@ -3413,7 +3502,9 @@ function showSimayDetail(id){
     </div>
     <div class="detail-section">Ödeme Bilgileri</div>
     <div class="detail-grid">
-      <div class="detail-item"><div class="detail-lbl">Tur Bedeli</div><div class="detail-val mono" style="color:var(--teal2)">${money(r.bedel)}</div></div>
+      <div class="detail-item"><div class="detail-lbl">Para Birimi</div><div class="detail-val"><span class="badge" style="background:rgba(11,122,110,.15);color:var(--teal2);border:1px solid rgba(11,122,110,.25)">${r.para||'EUR'}</span></div></div>
+      <div class="detail-item"><div class="detail-lbl">Tur Bedeli (Orijinal)</div><div class="detail-val mono" style="color:var(--teal2)">${r.para==='USD'?'$ '+(r.bedel||0).toLocaleString('tr-TR',{minimumFractionDigits:2}):r.para==='TRY'?'₺ '+(r.bedel||0).toLocaleString('tr-TR',{minimumFractionDigits:2}):money(r.bedel)}</div></div>
+      ${r.para&&r.para!=='EUR'&&r.bedelEur?`<div class="detail-item"><div class="detail-lbl">Euro Karşılığı</div><div class="detail-val mono" style="color:var(--gold2)">${money(r.bedelEur)}</div></div>`:''}
       <div class="detail-item"><div class="detail-lbl">KDV Oranı</div><div class="detail-val">${r.kdvOran?'%'+r.kdvOran:'KDV Yok'}</div></div>
       <div class="detail-item"><div class="detail-lbl">KDV Tutarı</div><div class="detail-val mono" style="color:var(--gold2)">${r.kdvTutar?money(r.kdvTutar):'—'}</div></div>
       <div class="detail-item"><div class="detail-lbl">KDV'li Toplam</div><div class="detail-val mono" style="color:var(--gold2)">${r.kdvliBedel?money(r.kdvliBedel):'—'}</div></div>
@@ -3850,6 +3941,100 @@ function onAcentaParaDegis(){
     const el=document.getElementById(id); if(el) el.textContent=simge;
   });
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  TÜM SATIŞLAR
+// ═══════════════════════════════════════════════════════════════════
+async function renderTumSatislar(){
+  DB = await dbLoad();
+  const q = (document.getElementById('tum-search')?.value||'').toLowerCase();
+
+  // Simay satışları - bedelEur kullan (USD/TRY çevrilmiş)
+  const simaylar = DB.simay
+    .filter(r => r.giris && r.giris.startsWith(String(activeYil)))
+    .map(r => ({
+      ...r,
+      _tip: 'simay',
+      _gelirEur: r.para && r.para !== 'EUR' ? (r.bedelEur || r.bedel) : (r.bedelEur || r.bedel),
+      _orijinal: r.para && r.para !== 'EUR'
+        ? (r.para === 'USD' ? `$ ${(r.bedel||0).toLocaleString('tr-TR',{minimumFractionDigits:2})}` : `₺ ${(r.bedel||0).toLocaleString('tr-TR',{minimumFractionDigits:2})}`)
+        : null,
+    }));
+
+  // Acenta satışları - para birimi EUR kabul et (bedel zaten EUR)
+  const acentalar = DB.acente
+    .filter(r => r.giris && r.giris.startsWith(String(activeYil)))
+    .map(r => ({
+      ...r,
+      _tip: 'acenta',
+      _gelirEur: r.kar || 0,
+      _orijinal: null,
+    }));
+
+  let tumData = [...simaylar, ...acentalar].sort((a,b) => (b.giris||'').localeCompare(a.giris||''));
+  if(q) tumData = tumData.filter(r => (r.misafir+r.tekne+(r.sorumlu||'')).toLowerCase().includes(q));
+
+  const toplamSimay = simaylar.reduce((a,r) => a + r._gelirEur, 0);
+  const toplamAcenta = acentalar.reduce((a,r) => a + r._gelirEur, 0);
+  const toplam = toplamSimay + toplamAcenta;
+
+  document.getElementById('tum-kpis').innerHTML = `
+    <div class="kpi" style="--ka:linear-gradient(90deg,#0b7a6e,#18b4a2);--kc:var(--teal2)">
+      <span class="kpi-icon">⛵</span>
+      <div class="kpi-lbl">Simay Cirosu (€)</div><div class="kpi-val">${money(toplamSimay)}</div><div class="kpi-sub">${simaylar.length} satış</div></div>
+    <div class="kpi" style="--ka:linear-gradient(90deg,#be8a20,#e8b84b);--kc:var(--gold2)">
+      <span class="kpi-icon">🤝</span>
+      <div class="kpi-lbl">Acenta Kârı (€)</div><div class="kpi-val">${money(toplamAcenta)}</div><div class="kpi-sub">${acentalar.length} satış</div></div>
+    <div class="kpi" style="--ka:linear-gradient(90deg,#156b3a,#22c55e);--kc:var(--green2)">
+      <span class="kpi-icon">💰</span>
+      <div class="kpi-lbl">Toplam (€)</div><div class="kpi-val">${money(toplam)}</div><div class="kpi-sub">${tumData.length} toplam kayıt</div></div>
+    <div class="kpi" style="--ka:linear-gradient(90deg,#1a4a7a,#60a5fa);--kc:var(--blue2)">
+      <span class="kpi-icon">📊</span>
+      <div class="kpi-lbl">Ort. Satış (€)</div><div class="kpi-val">${tumData.length?money(toplam/tumData.length):'€0'}</div><div class="kpi-sub">Kayıt başına</div></div>`;
+
+  const tbody = document.getElementById('tum-tbody');
+  const empty = document.getElementById('tum-empty');
+  if(!tumData.length){ tbody.innerHTML=''; empty.style.display=''; return; }
+  empty.style.display = 'none';
+
+  tbody.innerHTML = tumData.map((r,i) => {
+    const gun = daysBetween(r.giris, r.cikis);
+    const isSimay = r._tip === 'simay';
+    return `<tr class="clickable" onclick="${isSimay ? `showSimayDetail('${r.id}')` : `showAcenteDetail('${r.id}')`}">
+      <td style="color:var(--ink3)">${i+1}</td>
+      <td><span class="badge" style="${isSimay?'background:rgba(11,122,110,.15);color:var(--teal2);border:1px solid rgba(11,122,110,.25)':'background:rgba(190,138,32,.15);color:var(--gold2);border:1px solid rgba(190,138,32,.25)'}">${isSimay?'⛵ Simay':'🤝 Acenta'}</span></td>
+      <td class="fw">${r.misafir}</td>
+      <td>${r.tekne||'—'}</td>
+      <td style="color:var(--ink2)">${r.gliman||'—'}</td>
+      <td style="color:var(--ink2)">${r.climan||'—'}</td>
+      <td>${fmtDate(r.giris)}${r.cikis?' → '+fmtDate(r.cikis):''}</td>
+      <td style="color:var(--ink3)">${gun>0?gun+' gece':'—'}</td>
+      <td style="color:var(--ink2)">${r.sorumlu||'—'}</td>
+      <td class="mono fw" style="color:var(--teal2)">${money(r._gelirEur)}</td>
+      <td style="font-size:10px;color:var(--ink3)">${r._orijinal||'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function exportTumSatislarCSV(){
+  const simaylar = DB.simay.filter(r=>r.giris&&r.giris.startsWith(String(activeYil)));
+  const acentalar = DB.acente.filter(r=>r.giris&&r.giris.startsWith(String(activeYil)));
+  let csv = '﻿Tür,Misafir,Tekne,Giriş Limanı,Çıkış Limanı,Tur Başlangıç,Tur Bitiş,Süre,Sorumlu,Tutar EUR,Para Birimi,Orijinal Tutar\r\n';
+  simaylar.forEach(r=>{
+    const gelirEur = r.para&&r.para!=='EUR'?(r.bedelEur||r.bedel):r.bedel;
+    csv+=`"Simay","${r.misafir}","${r.tekne}","${r.gliman||''}","${r.climan||''}","${fmtDate(r.giris)}","${fmtDate(r.cikis)||''}",${daysBetween(r.giris,r.cikis)},"${r.sorumlu||''}",${gelirEur},"${r.para||'EUR'}",${r.bedel}
+`;
+  });
+  acentalar.forEach(r=>{
+    csv+=`"Acenta","${r.misafir}","${r.tekne}","${r.gliman||''}","${r.climan||''}","${fmtDate(r.giris)}","${fmtDate(r.cikis)||''}",${daysBetween(r.giris,r.cikis)},"${r.sorumlu||''}",${r.kar||0},"EUR",${r.kar||0}
+`;
+  });
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=`Simay_TumSatislar_${activeYil}.csv`;a.click();
+  toast('Tüm satışlar indirildi ✓');
+}
+
 // ═══════════════════════════════════════════════════════════════════
 //  WINDOW EXPORTS (module scope fix)
 // ═══════════════════════════════════════════════════════════════════
@@ -3890,6 +4075,9 @@ window.calcGiderEur = calcGiderEur;
 window.fetchKur = fetchKur;
 window.saveFatura = saveFatura;
 window.openGiderModal = openGiderModal;
+window.editGiderForm = editGiderForm;
+window.renderTumSatislar = renderTumSatislar;
+window.exportTumSatislarCSV = exportTumSatislarCSV;
 window.onAcentaGirisChange = onAcentaGirisChange;
 window.onAcentaParaDegis = onAcentaParaDegis;
 window.editFaturaForm = editFaturaForm;
