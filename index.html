@@ -945,6 +945,9 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
     <div class="sb-item" data-page="kumanya-tedarikciler">
       <span class="si">🏪</span>Tedarikçi Ödemeleri
     </div>
+    <div class="sb-item" data-page="kumanya-rapor">
+      <span class="si">📊</span>Özet Rapor
+    </div>
 
     <div class="sb-section">Sistem</div>
     <div class="sb-item" data-page="ayarlar">
@@ -1370,6 +1373,18 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
   <div class="kpi-grid" id="kumanya-tdr-kpis" style="grid-template-columns:repeat(4,1fr)"></div>
   <div class="filter-bar" id="kumanya-bolge-tabs" style="margin-bottom:18px"></div>
   <div id="kumanya-tdr-content"></div>
+</div>
+
+<!-- ───── KUMANYA ÖZET RAPOR ───── -->
+<div class="page" id="page-kumanya-rapor">
+  <div class="ph">
+    <div class="ph-left"><h2>📊 Özet Rapor</h2><p>Bölge bazında kumanya satış ve komisyon özeti</p></div>
+    <div class="ph-actions">
+      <button class="btn btn-ghost btn-sm" onclick="renderKumanyaRapor()">🔄 Yenile</button>
+    </div>
+  </div>
+  <div class="kpi-grid" id="rapor-kpis" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px"></div>
+  <div id="rapor-content"></div>
 </div>
 
 <!-- ───── AYARLAR ───── -->
@@ -2009,65 +2024,67 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
   </div>
 </div>
 
-<!-- MODAL: KUMANYA SATIŞ -->
+<!-- MODAL: KUMANYA SATIŞ (çok-tedarikçi) -->
 <div class="modal-bg" id="modal-kumanya-satis">
-  <div class="modal" style="max-width:660px">
+  <div class="modal" style="max-width:1100px;width:96vw">
     <div class="modal-hd">
       <div class="modal-title" id="modal-kumanya-satis-title">Yeni Kumanya Satış</div>
       <button class="modal-close" onclick="closeModal('modal-kumanya-satis')">✕</button>
     </div>
-    <!-- Rezervasyon bilgi bandı -->
-    <div id="kf-rez-bar" style="display:none;background:rgba(11,122,110,0.08);border:1px solid rgba(11,122,110,0.2);border-radius:9px;padding:10px 14px;margin-bottom:16px;display:flex;align-items:center;gap:10px;font-size:11px;color:var(--teal2)">
+    <!-- Rezervasyon seçici (aktif rezervasyon yoksa gösterilir) -->
+    <div id="kf-rez-secici-wrap" style="display:none;background:rgba(26,74,122,0.07);border:1px solid rgba(96,165,250,0.2);border-radius:9px;padding:12px 14px;margin-bottom:14px">
+      <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--blue2);font-weight:600;margin-bottom:8px">📅 Rezervasyon Seç *</div>
+      <select id="kf-modal-rez-sel" onchange="kfModalRezChange(this.value)"
+        style="width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(96,165,250,0.25);border-radius:7px;padding:9px 12px;color:var(--ink);font-family:'DM Sans',sans-serif;font-size:12px;outline:none">
+        <option value="">— Rezervasyon seçin —</option>
+      </select>
+    </div>
+
+    <!-- Rezervasyon bilgi bandı (rezervasyon seçiliyken gösterilir) -->
+    <div id="kf-rez-bar" style="display:none;background:rgba(11,122,110,0.08);border:1px solid rgba(11,122,110,0.2);border-radius:9px;padding:10px 14px;margin-bottom:16px;align-items:center;gap:10px;font-size:11px;color:var(--teal2)">
       <span style="font-size:16px">📅</span>
       <span id="kf-rez-bar-text"></span>
     </div>
-    <div class="form-grid">
-      <div class="fg"><label>Bölge *</label><select id="kf-bolge"></select></div>
-      <div class="fg"><label>Tedarikçi *</label><select id="kf-tedarikci" onchange="onKfTedarikciChange()"></select></div>
-      <div class="fg"><label>Müşteri Satış (₺) *</label>
-        <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:14px;color:var(--ink3)">₺</span>
-          <input type="number" id="kf-musteri-satis" placeholder="0" oninput="calcKumanyaKar()" style="flex:1;background:var(--glass2);border:1px solid var(--border);border-radius:7px;padding:9px 11px;color:var(--ink);font-family:sans-serif;font-size:12px;outline:none">
-        </div>
+
+    <!-- Bölge seçimi + genel not -->
+    <div style="display:flex;align-items:flex-end;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <div class="fg" style="min-width:180px">
+        <label>Bölge *</label>
+        <select id="kf-bolge" style="width:100%"></select>
       </div>
-      <div class="fg"><label>Komisyon Oranı <span style="font-size:9px;color:var(--teal2)" id="kf-komisyon-hint"></span></label>
-        <div style="display:flex;align-items:center;gap:6px">
-          <select id="kf-komisyon-oran" onchange="calcKumanyaKar()" style="flex:1;background:var(--glass2);border:1px solid var(--border);border-radius:7px;padding:9px 11px;color:var(--ink);font-size:12px;outline:none">
-            <option value="0">— Komisyon Yok</option>
-            <option value="5">%5</option>
-            <option value="10">%10</option>
-            <option value="15">%15</option>
-            <option value="20">%20</option>
-          </select>
-          <span id="kf-komisyon-tutar" style="font-size:11px;color:var(--teal2);font-weight:600;white-space:nowrap;min-width:50px;text-align:right"></span>
-        </div>
-      </div>
-      <div class="fg"><label>Tedarikçiye Ödeme (₺) *</label>
-        <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:14px;color:var(--ink3)">₺</span>
-          <input type="number" id="kf-tedarikci-odeme" placeholder="0" oninput="calcKumanyaKar()" style="flex:1;background:var(--glass2);border:1px solid var(--border);border-radius:7px;padding:9px 11px;color:var(--ink);font-family:'DM Sans',sans-serif;font-size:12px;outline:none">
-        </div>
-      </div>
-      <div class="fg"><label>Kâr (₺) <span style="font-size:9px;color:var(--teal2)">Otomatik</span></label>
-        <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:14px;color:var(--teal2)">₺</span>
-          <input type="number" id="kf-kar" placeholder="—" readonly style="flex:1;background:var(--glass2);border:1px solid var(--border);border-radius:7px;padding:9px 11px;color:var(--teal2);font-family:'DM Sans',sans-serif;font-size:12px;outline:none;font-weight:700">
-        </div>
-      </div>
-      <div class="fg"><label>Tedarikçi Ödeme Durumu</label>
-        <select id="kf-odeme-durum">
-          <option value="bekliyor">⏳ Ödenmedi</option>
-          <option value="odendi">✅ Ödendi</option>
-          <option value="kismi">🔶 Kısmi Ödendi</option>
-        </select>
-      </div>
-      <div class="fg span2"><label>Açıklama / İçerik</label>
-        <textarea id="kf-aciklama" placeholder="Kumanya içeriği, özel notlar..." style="min-height:50px"></textarea>
+      <div class="fg" style="flex:2;min-width:220px">
+        <label>Genel Açıklama / İçerik</label>
+        <input type="text" id="kf-aciklama-genel" placeholder="Opsiyonel genel not..." style="width:100%;background:var(--glass2);border:1px solid var(--border);border-radius:7px;padding:9px 11px;color:var(--ink);font-family:'DM Sans',sans-serif;font-size:12px;outline:none">
       </div>
     </div>
+
+    <!-- Tedarikçi satırları tablosu -->
+    <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px">
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead>
+          <tr style="background:rgba(255,255,255,0.035)">
+            <th style="padding:8px 10px;text-align:left;font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);font-weight:600;border-bottom:1px solid var(--border);width:180px">Tedarikçi</th>
+            <th style="padding:8px 10px;text-align:left;font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);font-weight:600;border-bottom:1px solid var(--border)">Müşteri Satış (₺)</th>
+            <th style="padding:8px 10px;text-align:left;font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);font-weight:600;border-bottom:1px solid var(--border);width:160px">Komisyon Oranı</th>
+            <th style="padding:8px 10px;text-align:left;font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);font-weight:600;border-bottom:1px solid var(--border)">Tdr. Ödemesi (₺)</th>
+            <th style="padding:8px 10px;text-align:left;font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);font-weight:600;border-bottom:1px solid var(--border);width:120px">Kâr (₺)</th>
+            <th style="padding:8px 10px;text-align:left;font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);font-weight:600;border-bottom:1px solid var(--border);width:160px">Ödeme Durumu</th>
+            <th style="padding:8px 10px;border-bottom:1px solid var(--border);width:40px"></th>
+          </tr>
+        </thead>
+        <tbody id="kf-satirlar-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Satır ekle + toplam özet -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <button class="btn btn-ghost btn-sm" onclick="kfSatirEkle()">＋ Tedarikçi Ekle</button>
+      <div id="kf-toplam-ozet" style="font-size:11px;color:var(--ink2);display:flex;gap:16px"></div>
+    </div>
+
     <div class="form-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-kumanya-satis')">Vazgeç</button>
-      <button class="btn btn-teal" onclick="saveKumanyaSatis()">💾 Kaydet</button>
+      <button class="btn btn-teal" onclick="saveKumanyaSatis()">💾 Tümünü Kaydet</button>
     </div>
     <input type="hidden" id="kf-id">
     <input type="hidden" id="kf-rezervasyon">
@@ -2340,6 +2357,7 @@ async function renderPage(pg){
   else if(pg==='fatura') await renderFatura();
   else if(pg==='kumanya') await renderKumanya();
   else if(pg==='kumanya-tedarikciler') await renderKumanyaTedarikciler();
+  else if(pg==='kumanya-rapor') await renderKumanyaRapor();
   else if(pg==='ayarlar') await loadSettings();
 }
 
@@ -4628,8 +4646,136 @@ const tryMoney = v => '₺' + Number(v||0).toLocaleString('tr-TR',{minimumFracti
 function buildKumanyaSelects(){
   const bSel = document.getElementById('kf-bolge');
   if(bSel) bSel.innerHTML = '<option value="">-- Bölge Seçin --</option>' + getKumanyaBolgeler().map(b=>`<option value="${b}">${b}</option>`).join('');
-  const tSel = document.getElementById('kf-tedarikci');
-  if(tSel) tSel.innerHTML = '<option value="">-- Tedarikçi Seçin --</option>' + getKumanyaTedarikciler().map(t=>`<option value="${t}">${t}</option>`).join('');
+}
+
+// ── Çok-satır kumanya modal helpers ──────────────────────────────
+const KOMISYON_SABIT_V = ['Kasap','Manav','Balık'];
+
+function kfTedarikciSelectHtml(secili){
+  const opts = getKumanyaTedarikciler().map(t=>`<option value="${t}"${t===secili?' selected':''}>${t}</option>`).join('');
+  return `<option value="">-- Seçin --</option>${opts}`;
+}
+
+function kfKomisyonSelectHtml(secili){
+  const vals = [['0','— Yok'],['5','%5'],['10','%10'],['15','%15'],['20','%20']];
+  return vals.map(([v,l])=>`<option value="${v}"${String(v)===String(secili)?' selected':''}>${l}</option>`).join('');
+}
+
+let kfSatirSayac = 0;
+
+function kfSatirEkle(data){
+  const tbody = document.getElementById('kf-satirlar-tbody');
+  if(!tbody) return;
+  const idx = kfSatirSayac++;
+  const d = data || {};
+  const tdr = d.tedarikci || '';
+  const defKom = KOMISYON_SABIT_V.includes(tdr) ? '10' : (d.komisyonOran !== undefined ? String(d.komisyonOran) : '0');
+
+  const IS = (id) => `kf-s${idx}-${id}`;
+  const inpStyle = `background:var(--glass2);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--ink);font-family:'DM Sans',sans-serif;font-size:12px;outline:none;width:100%`;
+  const selStyle = `background:var(--glass2);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--ink);font-size:12px;outline:none;width:100%`;
+
+  const tr = document.createElement('tr');
+  tr.id = `kf-satir-${idx}`;
+  tr.style.cssText = 'border-bottom:1px solid rgba(255,255,255,0.04)';
+  tr.innerHTML = `
+    <td style="padding:7px 8px">
+      <select id="${IS('tdr')}" onchange="kfSatirTdrChange(${idx})" style="${selStyle}">
+        ${kfTedarikciSelectHtml(tdr)}
+      </select>
+    </td>
+    <td style="padding:7px 8px">
+      <div style="display:flex;align-items:center;gap:4px">
+        <span style="color:var(--ink3);font-size:13px">₺</span>
+        <input type="number" id="${IS('satis')}" placeholder="0" oninput="kfSatirHesapla(${idx})" style="${inpStyle}" value="${d.musteriSatis||''}">
+      </div>
+    </td>
+    <td style="padding:7px 8px">
+      <select id="${IS('kom')}" onchange="kfSatirHesapla(${idx})" style="${selStyle}">
+        ${kfKomisyonSelectHtml(defKom)}
+      </select>
+    </td>
+    <td style="padding:7px 8px">
+      <div style="display:flex;align-items:center;gap:4px">
+        <span style="color:var(--ink3);font-size:13px">₺</span>
+        <input type="number" id="${IS('odeme')}" placeholder="0" oninput="kfSatirHesapla(${idx})" style="${inpStyle}" value="${d.tedarikciOdeme||''}">
+      </div>
+    </td>
+    <td style="padding:7px 8px">
+      <input type="number" id="${IS('kar')}" readonly placeholder="—"
+        style="${inpStyle};color:var(--teal2);font-weight:700;background:rgba(11,122,110,0.06)" value="${d.kar||''}">
+    </td>
+    <td style="padding:7px 8px">
+      <select id="${IS('durum')}" style="${selStyle}">
+        <option value="bekliyor"${(d.odemeDurum||'bekliyor')==='bekliyor'?' selected':''}>⏳ Ödenmedi</option>
+        <option value="odendi"${d.odemeDurum==='odendi'?' selected':''}>✅ Ödendi</option>
+        <option value="kismi"${d.odemeDurum==='kismi'?' selected':''}>🔶 Kısmi</option>
+      </select>
+    </td>
+    <td style="padding:7px 6px;text-align:center">
+      <button onclick="kfSatirSil(${idx})" style="background:none;border:none;cursor:pointer;color:var(--red2);font-size:14px;padding:2px 4px;border-radius:4px;opacity:.7" title="Satırı Sil">✕</button>
+    </td>`;
+  tbody.appendChild(tr);
+
+  // komisyon sabit mi?
+  if(KOMISYON_SABIT_V.includes(tdr)){
+    const komSel = document.getElementById(IS('kom'));
+    if(komSel){ komSel.value='10'; }
+  }
+  kfSatirHesapla(idx);
+}
+
+function kfSatirTdrChange(idx){
+  const tdr = document.getElementById(`kf-s${idx}-tdr`)?.value || '';
+  if(KOMISYON_SABIT_V.includes(tdr)){
+    const k = document.getElementById(`kf-s${idx}-kom`);
+    if(k) k.value = '10';
+  }
+  kfSatirHesapla(idx);
+}
+
+function kfSatirHesapla(idx){
+  const s = parseFloat(document.getElementById(`kf-s${idx}-satis`)?.value)||0;
+  const oran = parseFloat(document.getElementById(`kf-s${idx}-kom`)?.value)||0;
+  const komisyon = Math.round(s * oran / 100 * 100) / 100;
+  // oran > 0 ise tedarikçi ödemesini otomatik doldur
+  if(oran > 0){
+    const odEl = document.getElementById(`kf-s${idx}-odeme`);
+    if(odEl) odEl.value = s > 0 ? (s - komisyon).toFixed(0) : '';
+  }
+  const odeme = parseFloat(document.getElementById(`kf-s${idx}-odeme`)?.value)||0;
+  const kar = s - odeme;
+  const karEl = document.getElementById(`kf-s${idx}-kar`);
+  if(karEl){
+    karEl.value = s > 0 ? kar.toFixed(0) : '';
+    karEl.style.color = kar >= 0 ? 'var(--teal2)' : 'var(--red2)';
+  }
+  kfToplamGuncelle();
+}
+
+function kfSatirSil(idx){
+  const tr = document.getElementById(`kf-satir-${idx}`);
+  if(tr) tr.remove();
+  kfToplamGuncelle();
+}
+
+function kfToplamGuncelle(){
+  const tbody = document.getElementById('kf-satirlar-tbody');
+  if(!tbody) return;
+  let topSatis=0, topOdeme=0, topKar=0;
+  tbody.querySelectorAll('tr').forEach(tr => {
+    const id = tr.id.replace('kf-satir-','');
+    topSatis  += parseFloat(document.getElementById(`kf-s${id}-satis`)?.value)||0;
+    topOdeme  += parseFloat(document.getElementById(`kf-s${id}-odeme`)?.value)||0;
+    topKar    += parseFloat(document.getElementById(`kf-s${id}-kar`)?.value)||0;
+  });
+  const ozet = document.getElementById('kf-toplam-ozet');
+  if(ozet && (topSatis||topOdeme||topKar)){
+    ozet.innerHTML = `
+      <span>Toplam Satış: <strong style="color:var(--teal2)">₺${topSatis.toLocaleString('tr-TR')}</strong></span>
+      <span>Tdr. Ödeme: <strong style="color:var(--red2)">₺${topOdeme.toLocaleString('tr-TR')}</strong></span>
+      <span>Toplam Kâr: <strong style="color:var(--green2)">₺${topKar.toLocaleString('tr-TR')}</strong></span>`;
+  } else if(ozet){ ozet.innerHTML=''; }
 }
 
 function getRezInfoText(rezId){
@@ -4641,28 +4787,81 @@ function getRezInfoText(rezId){
 
 function openKumanyaSatisModal(){
   buildKumanyaSelects();
-  ['kf-id','kf-aciklama','kf-musteri-satis','kf-tedarikci-odeme','kf-kar'].forEach(i=>{const el=document.getElementById(i);if(el)el.value='';});
-  const od=document.getElementById('kf-odeme-durum'); if(od) od.value='bekliyor';
-  const koSel=document.getElementById('kf-komisyon-oran'); if(koSel){koSel.value='0';koSel.disabled=false;}
-  const koTutar=document.getElementById('kf-komisyon-tutar'); if(koTutar) koTutar.textContent='';
-  const koHint=document.getElementById('kf-komisyon-hint'); if(koHint) koHint.textContent='';
-  // Set hidden fields from selected reservation
-  const rezHid = document.getElementById('kf-rezervasyon'); if(rezHid) rezHid.value = activeKumanyaRezId;
-  const sel = document.getElementById('kumanya-rez-sel');
-  if(activeKumanyaRezId && sel){
-    const opt = sel.options[sel.selectedIndex];
-    const tekneHid = document.getElementById('kf-tekne'); if(tekneHid) tekneHid.value = opt?.dataset?.tekne||'';
-    const bHid = document.getElementById('kf-tur-baslangic'); if(bHid) bHid.value = opt?.dataset?.b||'';
-    const eHid = document.getElementById('kf-tur-bitis'); if(eHid) eHid.value = opt?.dataset?.e||'';
-    const bar = document.getElementById('kf-rez-bar');
-    const barTxt = document.getElementById('kf-rez-bar-text');
+  document.getElementById('kf-id').value = '';
+  const aclEl = document.getElementById('kf-aciklama-genel'); if(aclEl) aclEl.value='';
+
+  // Modal içi rezervasyon seçiciyi doldur
+  const modalRezSel = document.getElementById('kf-modal-rez-sel');
+  if(modalRezSel){
+    const tumRez = [
+      ...(DB.simay||[]).filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).map(r=>({id:r.id, label:'⛵ '+r.misafir+' — '+r.tekne+' ('+fmtDate(r.giris)+(r.cikis?' → '+fmtDate(r.cikis):'')+')' , tekne:r.tekne, b:r.giris, e:r.cikis||''})),
+      ...(DB.acente||[]).filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).map(r=>({id:r.id, label:'🤝 '+r.misafir+' — '+r.tekne+' ('+fmtDate(r.giris)+(r.cikis?' → '+fmtDate(r.cikis):'')+')' , tekne:r.tekne, b:r.giris, e:r.cikis||''})),
+    ].sort((a,b)=>b.b.localeCompare(a.b));
+    modalRezSel.innerHTML = '<option value="">— Rezervasyon seçin —</option>' +
+      tumRez.map(r=>`<option value="${r.id}" data-tekne="${r.tekne}" data-b="${r.b}" data-e="${r.e}">${r.label}</option>`).join('');
+    modalRezSel.value = activeKumanyaRezId || '';
+  }
+
+  // Rezervasyon seçiliyse seçiciyi gizle, bilgi bandını göster; seçilmemişse seçiciyi göster
+  const seciciWrap = document.getElementById('kf-rez-secici-wrap');
+  const bar = document.getElementById('kf-rez-bar');
+  const barTxt = document.getElementById('kf-rez-bar-text');
+
+  if(activeKumanyaRezId){
+    if(seciciWrap) seciciWrap.style.display = 'none';
     const info = getRezInfoText(activeKumanyaRezId);
     if(bar) bar.style.display = info ? 'flex' : 'none';
     if(barTxt && info) barTxt.innerHTML = info;
+    // hidden fields
+    _kfSetRezHiddenFields(activeKumanyaRezId);
   } else {
-    const bar = document.getElementById('kf-rez-bar'); if(bar) bar.style.display='none';
+    if(seciciWrap) seciciWrap.style.display = 'block';
+    if(bar) bar.style.display = 'none';
+    // hidden fields boş
+    document.getElementById('kf-rezervasyon').value = '';
+    document.getElementById('kf-tekne').value = '';
+    document.getElementById('kf-tur-baslangic').value = '';
+    document.getElementById('kf-tur-bitis').value = '';
   }
+
+  // Satırları temizle
+  const tbody = document.getElementById('kf-satirlar-tbody');
+  if(tbody) tbody.innerHTML = '';
+  kfSatirSayac = 0;
+  const ozet = document.getElementById('kf-toplam-ozet'); if(ozet) ozet.innerHTML='';
+  kfSatirEkle();
   openModal('modal-kumanya-satis','Yeni Kumanya Satış');
+}
+
+function _kfSetRezHiddenFields(rezId){
+  const sel = document.getElementById('kumanya-rez-sel');
+  const opt = sel ? Array.from(sel.options).find(o=>o.value===rezId) : null;
+  document.getElementById('kf-rezervasyon').value = rezId;
+  document.getElementById('kf-tekne').value = opt?.dataset?.tekne || '';
+  document.getElementById('kf-tur-baslangic').value = opt?.dataset?.b || '';
+  document.getElementById('kf-tur-bitis').value = opt?.dataset?.e || '';
+}
+
+function kfModalRezChange(rezId){
+  const bar = document.getElementById('kf-rez-bar');
+  const barTxt = document.getElementById('kf-rez-bar-text');
+  if(rezId){
+    const modalSel = document.getElementById('kf-modal-rez-sel');
+    const opt = modalSel ? Array.from(modalSel.options).find(o=>o.value===rezId) : null;
+    document.getElementById('kf-rezervasyon').value = rezId;
+    document.getElementById('kf-tekne').value = opt?.dataset?.tekne || '';
+    document.getElementById('kf-tur-baslangic').value = opt?.dataset?.b || '';
+    document.getElementById('kf-tur-bitis').value = opt?.dataset?.e || '';
+    const info = getRezInfoText(rezId);
+    if(bar){ bar.style.display = info ? 'flex' : 'none'; }
+    if(barTxt && info) barTxt.innerHTML = info;
+  } else {
+    document.getElementById('kf-rezervasyon').value = '';
+    document.getElementById('kf-tekne').value = '';
+    document.getElementById('kf-tur-baslangic').value = '';
+    document.getElementById('kf-tur-bitis').value = '';
+    if(bar) bar.style.display = 'none';
+  }
 }
 
 function openMenuSatisModal(){
@@ -4682,52 +4881,7 @@ function openMenuSatisModal(){
   openModal('modal-kumanya-menu','Yeni Menü Satış');
 }
 
-// Tedarikçiye göre komisyon oranını ayarla
-const KOMISYON_SABIT = ['Kasap','Manav','Balık']; // %10 sabit
-const KOMISYON_SECIMLI = ['Migros','Alkol','Su Sporları']; // serbest seçim
-
-function onKfTedarikciChange(){
-  const tdr = document.getElementById('kf-tedarikci')?.value || '';
-  const oranSel = document.getElementById('kf-komisyon-oran');
-  const hint    = document.getElementById('kf-komisyon-hint');
-  if(!oranSel) return;
-  oranSel.disabled = false;
-  if(KOMISYON_SABIT.includes(tdr)){
-    if(oranSel.value === '0') oranSel.value = '10';
-    if(hint) hint.textContent = '— %10 varsayılan';
-  } else if(KOMISYON_SECIMLI.includes(tdr)){
-    if(oranSel.value === '0') oranSel.value = '10';
-    if(hint) hint.textContent = '— oran seçin';
-  } else {
-    if(hint) hint.textContent = '';
-  }
-  calcKumanyaKar();
-}
-
-function calcKumanyaKar(){
-  const s    = parseFloat(document.getElementById('kf-musteri-satis')?.value)||0;
-  const oran = parseFloat(document.getElementById('kf-komisyon-oran')?.value)||0;
-  const komisyon = Math.round(s * oran / 100 * 100) / 100;
-  const odeme    = Math.round((s - komisyon) * 100) / 100;
-  const kar      = komisyon; // şirket karı = komisyon tutarı
-
-  // Tedarikçiye ödemeyi otomatik doldur
-  const odemeEl = document.getElementById('kf-tedarikci-odeme');
-  if(odemeEl && oran > 0){ odemeEl.value = odeme > 0 ? odeme : 0; }
-
-  // Komisyon tutarını göster
-  const tutarEl = document.getElementById('kf-komisyon-tutar');
-  if(tutarEl) tutarEl.textContent = komisyon > 0 ? '₺'+komisyon.toLocaleString('tr-TR') : '';
-
-  // Kâr
-  const karEl = document.getElementById('kf-kar');
-  if(karEl){
-    const o2 = parseFloat(document.getElementById('kf-tedarikci-odeme')?.value)||0;
-    const k2 = s - o2;
-    karEl.value = k2.toFixed(2);
-    karEl.style.color = k2 >= 0 ? 'var(--teal2)' : 'var(--red2)';
-  }
-}
+// onKfTedarikciChange ve calcKumanyaKar artık kfSatirTdrChange / kfSatirHesapla ile değiştirildi
 function calcMenuKar(){
   const s = parseFloat(document.getElementById('mf-satis')?.value)||0;
   const m = parseFloat(document.getElementById('mf-maliyet')?.value)||0;
@@ -4740,30 +4894,72 @@ function calcMenuKar(){
 // ═══════════════════════════════════════════════════════════════════
 async function saveKumanyaSatis(){
   if(isReadOnly){ toast('Geçmiş yıl — kayıt eklenemez','err'); closeModal('modal-kumanya-satis'); return; }
-  const id = document.getElementById('kf-id').value;
+  const editId = document.getElementById('kf-id').value; // düzenleme modunda tek id
   const bolge = document.getElementById('kf-bolge').value;
-  const tedarikci = document.getElementById('kf-tedarikci').value;
-  if(!bolge||!tedarikci){ toast('Bölge ve tedarikçi seçiniz','err'); return; }
-  const musteriSatis = parseFloat(document.getElementById('kf-musteri-satis').value)||0;
-  const tedarikciOdeme = parseFloat(document.getElementById('kf-tedarikci-odeme').value)||0;
-  const komisyonOran = parseFloat(document.getElementById('kf-komisyon-oran')?.value)||0;
-  const komisyonTutar = Math.round(musteriSatis * komisyonOran / 100 * 100) / 100;
-  if(!musteriSatis){ toast('Müşteri satış tutarı giriniz','err'); return; }
-  const r = {
-    id: id||uid(), ts: Date.now(),
-    bolge, tedarikci,
-    rezervasyonId: document.getElementById('kf-rezervasyon')?.value||'',
-    tekne: document.getElementById('kf-tekne')?.value||'',
-    turBaslangic: document.getElementById('kf-tur-baslangic')?.value||'',
-    turBitis: document.getElementById('kf-tur-bitis')?.value||'',
-    musteriSatis, tedarikciOdeme, kar: musteriSatis-tedarikciOdeme,
-    komisyonOran, komisyonTutar,
-    odemeDurum: document.getElementById('kf-odeme-durum').value,
-    aciklama: document.getElementById('kf-aciklama').value.trim(),
-  };
+  if(!bolge){ toast('Bölge seçiniz','err'); return; }
+  const genelAciklama = document.getElementById('kf-aciklama-genel')?.value.trim()||'';
+  const rezId  = document.getElementById('kf-rezervasyon')?.value||'';
+  if(!rezId){ toast('Lütfen bir rezervasyon seçin','err'); return; }
+  const tekne  = document.getElementById('kf-tekne')?.value||'';
+  const turB   = document.getElementById('kf-tur-baslangic')?.value||'';
+  const turE   = document.getElementById('kf-tur-bitis')?.value||'';
+
+  // Tek kayıt düzenleme modu
+  if(editId){
+    const tbody = document.getElementById('kf-satirlar-tbody');
+    const firstRow = tbody?.querySelector('tr');
+    if(!firstRow){ toast('Satır bulunamadı','err'); return; }
+    const id0 = firstRow.id.replace('kf-satir-','');
+    const tedarikci = document.getElementById(`kf-s${id0}-tdr`)?.value||'';
+    const musteriSatis = parseFloat(document.getElementById(`kf-s${id0}-satis`)?.value)||0;
+    const tedarikciOdeme = parseFloat(document.getElementById(`kf-s${id0}-odeme`)?.value)||0;
+    const komisyonOran = parseFloat(document.getElementById(`kf-s${id0}-kom`)?.value)||0;
+    const komisyonTutar = Math.round(musteriSatis * komisyonOran / 100 * 100) / 100;
+    if(!tedarikci||!musteriSatis){ toast('Tedarikçi ve satış tutarı zorunlu','err'); return; }
+    const updated = {
+      id: editId, ts: Date.now(), bolge, tedarikci,
+      rezervasyonId:rezId, tekne, turBaslangic:turB, turBitis:turE,
+      musteriSatis, tedarikciOdeme, kar: musteriSatis-tedarikciOdeme,
+      komisyonOran, komisyonTutar,
+      odemeDurum: document.getElementById(`kf-s${id0}-durum`)?.value||'bekliyor',
+      aciklama: genelAciklama,
+    };
+    if(!DB.kumanya) DB.kumanya=[];
+    DB.kumanya = DB.kumanya.map(x=>x.id===editId?updated:x);
+    toast('Güncellendi ✓');
+    await dbSave(DB); closeModal('modal-kumanya-satis'); await renderKumanya();
+    return;
+  }
+
+  // Yeni kayıt — tüm satırları kaydet
+  const tbody = document.getElementById('kf-satirlar-tbody');
+  if(!tbody||!tbody.querySelectorAll('tr').length){ toast('En az bir tedarikçi satırı ekleyin','err'); return; }
+
+  const yeniKayitlar = [];
+  let hata = false;
+  tbody.querySelectorAll('tr').forEach(tr => {
+    if(hata) return;
+    const i = tr.id.replace('kf-satir-','');
+    const tedarikci = document.getElementById(`kf-s${i}-tdr`)?.value||'';
+    const musteriSatis = parseFloat(document.getElementById(`kf-s${i}-satis`)?.value)||0;
+    const tedarikciOdeme = parseFloat(document.getElementById(`kf-s${i}-odeme`)?.value)||0;
+    const komisyonOran = parseFloat(document.getElementById(`kf-s${i}-kom`)?.value)||0;
+    const komisyonTutar = Math.round(musteriSatis * komisyonOran / 100 * 100) / 100;
+    if(!tedarikci){ toast('Tüm satırlar için tedarikçi seçiniz','err'); hata=true; return; }
+    if(!musteriSatis){ toast('Tüm satırlar için müşteri satış tutarı giriniz','err'); hata=true; return; }
+    yeniKayitlar.push({
+      id: uid(), ts: Date.now(), bolge, tedarikci,
+      rezervasyonId: rezId, tekne, turBaslangic: turB, turBitis: turE,
+      musteriSatis, tedarikciOdeme, kar: musteriSatis-tedarikciOdeme,
+      komisyonOran, komisyonTutar,
+      odemeDurum: document.getElementById(`kf-s${i}-durum`)?.value||'bekliyor',
+      aciklama: genelAciklama,
+    });
+  });
+  if(hata) return;
   if(!DB.kumanya) DB.kumanya=[];
-  if(id){ DB.kumanya=DB.kumanya.map(x=>x.id===id?r:x); toast('Güncellendi ✓'); }
-  else { DB.kumanya.push(r); toast('Kumanya eklendi ✓'); }
+  DB.kumanya.push(...yeniKayitlar);
+  toast(`${yeniKayitlar.length} kumanya kaydı eklendi ✓`);
   await dbSave(DB); closeModal('modal-kumanya-satis'); await renderKumanya();
 }
 
@@ -4795,29 +4991,30 @@ async function saveMenuSatis(){
 function editKumanyaSatis(id){
   const r=(DB.kumanya||[]).find(x=>x.id===id); if(!r) return;
   buildKumanyaSelects();
-  setTimeout(()=>{
-    document.getElementById('kf-id').value=r.id;
-    document.getElementById('kf-bolge').value=r.bolge||'';
-    document.getElementById('kf-tedarikci').value=r.tedarikci||'';
-    document.getElementById('kf-rezervasyon').value=r.rezervasyonId||'';
-    document.getElementById('kf-tekne').value=r.tekne||'';
-    document.getElementById('kf-tur-baslangic').value=r.turBaslangic||'';
-    document.getElementById('kf-tur-bitis').value=r.turBitis||'';
-    document.getElementById('kf-musteri-satis').value=r.musteriSatis||'';
-    document.getElementById('kf-tedarikci-odeme').value=r.tedarikciOdeme||'';
-    document.getElementById('kf-kar').value=r.kar||'';
-    document.getElementById('kf-odeme-durum').value=r.odemeDurum||'bekliyor';
-    document.getElementById('kf-aciklama').value=r.aciklama||'';
-    const oranSel=document.getElementById('kf-komisyon-oran');
-    if(oranSel) oranSel.value=String(r.komisyonOran||0);
-    onKfTedarikciChange();
-    calcKumanyaKar();
-    const bar=document.getElementById('kf-rez-bar');
-    const barTxt=document.getElementById('kf-rez-bar-text');
-    const info=getRezInfoText(r.rezervasyonId);
-    if(bar) bar.style.display=info?'flex':'none';
-    if(barTxt&&info) barTxt.innerHTML=info;
-  },50);
+  // Bölge, genel açıklama, hidden fields
+  const bSel = document.getElementById('kf-bolge');
+  if(bSel) bSel.value = r.bolge||'';
+  const aclEl = document.getElementById('kf-aciklama-genel');
+  if(aclEl) aclEl.value = r.aciklama||'';
+  document.getElementById('kf-id').value = r.id;
+  document.getElementById('kf-rezervasyon').value = r.rezervasyonId||'';
+  document.getElementById('kf-tekne').value = r.tekne||'';
+  document.getElementById('kf-tur-baslangic').value = r.turBaslangic||'';
+  document.getElementById('kf-tur-bitis').value = r.turBitis||'';
+
+  // Rezervasyon bilgi bandı
+  const bar = document.getElementById('kf-rez-bar');
+  const barTxt = document.getElementById('kf-rez-bar-text');
+  const info = getRezInfoText(r.rezervasyonId);
+  if(bar) bar.style.display = info ? 'flex' : 'none';
+  if(barTxt && info) barTxt.innerHTML = info;
+
+  // Tek satırı göster
+  const tbody = document.getElementById('kf-satirlar-tbody');
+  if(tbody) tbody.innerHTML = '';
+  kfSatirSayac = 0;
+  const ozet = document.getElementById('kf-toplam-ozet'); if(ozet) ozet.innerHTML='';
+  kfSatirEkle(r);
   openModal('modal-kumanya-satis','Kumanya Düzenle');
 }
 
@@ -4884,39 +5081,44 @@ async function renderKumanyaTedarikciler(){
     return String(new Date(r.ts).getFullYear())===String(activeYil);
   });
 
-  const toplam=allKumanya.reduce((a,r)=>a+r.tedarikciOdeme,0);
-  const odendi=allKumanya.filter(r=>r.odemeDurum==='odendi').reduce((a,r)=>a+r.tedarikciOdeme,0);
-  const odenmedi=allKumanya.filter(r=>r.odemeDurum!=='odendi').reduce((a,r)=>a+r.tedarikciOdeme,0);
-  const odenmeyen=allKumanya.filter(r=>r.odemeDurum!=='odendi').length;
-
-  document.getElementById('kumanya-tdr-kpis').innerHTML = `
-    <div class="kpi" style="--ka:linear-gradient(90deg,#0b7a6e,#18b4a2);--kc:var(--teal2)">
-      <span class="kpi-icon">🏪</span>
-      <div class="kpi-lbl">Toplam Tedarikçi Ödemesi (₺)</div><div class="kpi-val">${tryMoney(toplam)}</div><div class="kpi-sub">${allKumanya.length} kayıt</div></div>
-    <div class="kpi" style="--ka:linear-gradient(90deg,#156b3a,#22c55e);--kc:var(--green2)">
-      <span class="kpi-icon">✅</span>
-      <div class="kpi-lbl">Ödendi (₺)</div><div class="kpi-val">${tryMoney(odendi)}</div><div class="kpi-sub">${allKumanya.filter(r=>r.odemeDurum==='odendi').length} kayıt</div></div>
-    <div class="kpi" style="--ka:linear-gradient(90deg,#b83030,#f87171);--kc:var(--red2)">
-      <span class="kpi-icon">⏳</span>
-      <div class="kpi-lbl">Ödenmedi (₺)</div><div class="kpi-val">${tryMoney(odenmedi)}</div><div class="kpi-sub">${odenmeyen} kayıt</div></div>
-    <div class="kpi" style="--ka:linear-gradient(90deg,#be8a20,#e8b84b);--kc:var(--gold2)">
-      <span class="kpi-icon">📍</span>
-      <div class="kpi-lbl">Bölge</div><div class="kpi-val" style="font-size:18px">${activeTdrBolge||'—'}</div><div class="kpi-sub">${bolgeler.length} bölge</div></div>`;
-
   const data = activeTdrBolge ? allKumanya.filter(r=>r.bolge===activeTdrBolge) : [];
   const tdrMap={};
   data.forEach(r=>{
-    if(!tdrMap[r.tedarikci]) tdrMap[r.tedarikci]={toplam:0,odendi:0,odenmedi:0,kayitlar:[]};
+    if(!tdrMap[r.tedarikci]) tdrMap[r.tedarikci]={toplam:0,odendi:0,odenmedi:0,musteriSatis:0,komisyon:0,kayitlar:[]};
     tdrMap[r.tedarikci].toplam+=r.tedarikciOdeme;
+    tdrMap[r.tedarikci].musteriSatis+=r.musteriSatis||0;
+    tdrMap[r.tedarikci].komisyon+=r.komisyonTutar||0;
     if(r.odemeDurum==='odendi') tdrMap[r.tedarikci].odendi+=r.tedarikciOdeme;
     else tdrMap[r.tedarikci].odenmedi+=r.tedarikciOdeme;
     tdrMap[r.tedarikci].kayitlar.push(r);
   });
 
+  // KPI — seçili bölge bazında
+  const bToplam  = data.reduce((a,r)=>a+r.tedarikciOdeme,0);
+  const bOdendi  = data.filter(r=>r.odemeDurum==='odendi').reduce((a,r)=>a+r.tedarikciOdeme,0);
+  const bOdenmedi= data.filter(r=>r.odemeDurum!=='odendi').reduce((a,r)=>a+r.tedarikciOdeme,0);
+  const bSatis   = data.reduce((a,r)=>a+(r.musteriSatis||0),0);
+  const bKomiyon = data.reduce((a,r)=>a+(r.komisyonTutar||0),0);
+  const bOdenmeyen=data.filter(r=>r.odemeDurum!=='odendi').length;
+
+  document.getElementById('kumanya-tdr-kpis').innerHTML = `
+    <div class="kpi" style="--ka:linear-gradient(90deg,#0b7a6e,#18b4a2);--kc:var(--teal2)">
+      <span class="kpi-icon">🏪</span>
+      <div class="kpi-lbl">Tedarikçi Ödemesi</div><div class="kpi-val">${tryMoney(bToplam)}</div><div class="kpi-sub">${data.length} kayıt · ${activeTdrBolge}</div></div>
+    <div class="kpi" style="--ka:linear-gradient(90deg,#156b3a,#22c55e);--kc:var(--green2)">
+      <span class="kpi-icon">✅</span>
+      <div class="kpi-lbl">Ödendi</div><div class="kpi-val">${tryMoney(bOdendi)}</div><div class="kpi-sub">${data.filter(r=>r.odemeDurum==='odendi').length} kayıt</div></div>
+    <div class="kpi" style="--ka:linear-gradient(90deg,#b83030,#f87171);--kc:var(--red2)">
+      <span class="kpi-icon">⏳</span>
+      <div class="kpi-lbl">Ödenmedi</div><div class="kpi-val">${tryMoney(bOdenmedi)}</div><div class="kpi-sub">${bOdenmeyen} kayıt</div></div>
+    <div class="kpi" style="--ka:linear-gradient(90deg,#1a4a7a,#60a5fa);--kc:var(--blue2)">
+      <span class="kpi-icon">💰</span>
+      <div class="kpi-lbl">Müşteri Satış</div><div class="kpi-val">${tryMoney(bSatis)}</div><div class="kpi-sub">Komisyon: ${tryMoney(bKomiyon)}</div></div>`;
+
   const cont=document.getElementById('kumanya-tdr-content');
   if(!data.length){ cont.innerHTML='<div class="empty-state"><div class="es-icon">🏪</div><div class="es-text">Bu bölgede kayıt yok.</div></div>'; return; }
 
-  cont.innerHTML=Object.entries(tdrMap).sort((a,b)=>b[1].toplam-a[1].toplam).map(([tdr,v])=>{
+  const tedarikciPanels = Object.entries(tdrMap).sort((a,b)=>b[1].toplam-a[1].toplam).map(([tdr,v])=>{
     const pct=v.toplam>0?(v.odendi/v.toplam*100):0;
     const rows=v.kayitlar.sort((a,b)=>(b.turBaslangic||'').localeCompare(a.turBaslangic||'')).map((r,i)=>`<tr>
       <td style="color:var(--ink3)">${i+1}</td>
@@ -4924,8 +5126,9 @@ async function renderKumanyaTedarikciler(){
       <td style="color:var(--ink2);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${getRezLabel(r.rezervasyonId)}</td>
       <td style="font-weight:600">${r.tekne||'—'}</td>
       <td style="color:var(--ink2)">${r.turBaslangic?fmtDate(r.turBaslangic)+(r.turBitis?' → '+fmtDate(r.turBitis):''):'—'}</td>
-      <td class="mono fw" style="color:var(--red2)">${tryMoney(r.tedarikciOdeme)}</td>
-      <td class="mono" style="color:var(--teal2)">${tryMoney(r.musteriSatis)}</td>
+      <td class="mono fw" style="color:var(--teal2)">${tryMoney(r.musteriSatis)}</td>
+      <td class="mono fw" style="color:var(--blue2)">${r.komisyonOran?'%'+r.komisyonOran+' · '+tryMoney(r.komisyonTutar||0):'—'}</td>
+      <td class="mono" style="color:var(--red2)">${tryMoney(r.tedarikciOdeme)}</td>
       <td>
         <select onchange="updateOdemeDurum('${r.id}',this.value)" style="background:var(--glass2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--ink);font-size:11px;cursor:pointer">
           <option value="bekliyor" ${(r.odemeDurum||'bekliyor')==='bekliyor'?'selected':''}>⏳ Ödenmedi</option>
@@ -4939,7 +5142,7 @@ async function renderKumanyaTedarikciler(){
       <div class="panel-hd" style="margin-bottom:12px">
         <div>
           <div class="panel-title" style="font-size:16px">${getTdrEmoji(tdr)} ${tdr}</div>
-          <div class="panel-sub">Toplam: <strong>${tryMoney(v.toplam)}</strong> &nbsp;·&nbsp; <span style="color:var(--green2)">✅ ${tryMoney(v.odendi)}</span> &nbsp;·&nbsp; <span style="color:var(--red2)">⏳ ${tryMoney(v.odenmedi)}</span></div>
+          <div class="panel-sub">Müşteri Satış: <strong>${tryMoney(v.musteriSatis)}</strong> &nbsp;·&nbsp; Tedarikçi: <span style="color:var(--red2)">${tryMoney(v.toplam)}</span> &nbsp;·&nbsp; Komisyon: <span style="color:var(--blue2)">${tryMoney(v.komisyon)}</span></div>
         </div>
         <div style="width:120px">
           <div style="font-size:9px;color:var(--ink3);margin-bottom:3px">Ödeme</div>
@@ -4949,15 +5152,214 @@ async function renderKumanyaTedarikciler(){
       </div>
       <div class="tbl-outer" style="margin-bottom:0"><div class="tbl-scroll">
         <table><thead><tr>
-          <th>#</th><th>Bölge</th><th>Misafir / Tur</th><th>Tekne</th><th>Tur Tarihi</th>
-          <th>Tedarikçi Ödemesi (₺)</th><th>Müşteri Satışı (₺)</th><th>Ödeme Durumu</th><th>İşlem</th>
+          <th>#</th><th>Bölge</th><th>Misafir</th><th>Tekne</th><th>Tur Tarihi</th>
+          <th>Müşteri Satış</th><th>Komisyon</th><th>Tedarikçi Ödemesi</th><th>Ödeme Durumu</th><th>İşlem</th>
         </tr></thead><tbody>${rows}</tbody></table>
       </div></div>
     </div>`;
   }).join('');
+
+  // Özet rapor tablosu
+  const raporRows = Object.entries(tdrMap).sort((a,b)=>b[1].musteriSatis-a[1].musteriSatis).map(([tdr,v])=>{
+    const kar = v.musteriSatis - v.toplam;
+    return `<tr>
+      <td><span style="font-weight:600">${getTdrEmoji(tdr)} ${tdr}</span></td>
+      <td class="mono fw" style="color:var(--teal2)">${tryMoney(v.musteriSatis)}</td>
+      <td class="mono" style="color:var(--blue2)">${tryMoney(v.komisyon)}</td>
+      <td class="mono" style="color:var(--red2)">${tryMoney(v.toplam)}</td>
+      <td class="mono fw" style="color:${kar>=0?'var(--green2)':'var(--red2)'}">${tryMoney(kar)}</td>
+      <td><span style="font-size:10px;color:var(--ink3)">${v.kayitlar.length} kayıt</span></td>
+    </tr>`;
+  }).join('');
+  const topKar = bSatis - bToplam;
+  const rapor = `<div class="panel" style="margin-top:8px;border:1px solid rgba(96,165,250,0.2)">
+    <div class="panel-hd" style="margin-bottom:12px">
+      <div>
+        <div class="panel-title" style="font-size:15px">📊 ${activeTdrBolge} — Özet Rapor</div>
+        <div class="panel-sub">${data.length} işlem · ${Object.keys(tdrMap).length} tedarikçi</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:10px;color:var(--ink3)">Toplam Kâr</div>
+        <div style="font-size:20px;font-weight:700;color:${topKar>=0?'var(--green2)':'var(--red2)'}">${tryMoney(topKar)}</div>
+      </div>
+    </div>
+    <div class="tbl-outer" style="margin-bottom:0"><div class="tbl-scroll">
+      <table>
+        <thead><tr>
+          <th>Tedarikçi</th><th>Müşteri Satış</th><th>Komisyon</th><th>Tedarikçi Ödemesi</th><th>Net Kâr</th><th></th>
+        </tr></thead>
+        <tbody>${raporRows}</tbody>
+        <tfoot><tr style="border-top:2px solid rgba(255,255,255,0.1);font-weight:700">
+          <td>TOPLAM</td>
+          <td class="mono fw" style="color:var(--teal2)">${tryMoney(bSatis)}</td>
+          <td class="mono" style="color:var(--blue2)">${tryMoney(bKomiyon)}</td>
+          <td class="mono" style="color:var(--red2)">${tryMoney(bToplam)}</td>
+          <td class="mono fw" style="color:${topKar>=0?'var(--green2)':'var(--red2)'}">${tryMoney(topKar)}</td>
+          <td></td>
+        </tr></tfoot>
+      </table>
+    </div></div>
+  </div>`;
+
+  cont.innerHTML = tedarikciPanels;
 }
 
 function setTdrBolge(b){ activeTdrBolge=b; renderKumanyaTedarikciler(); }
+
+// ═══════════════════════════════════════════════════════════════════
+//  KUMANYA ÖZET RAPOR
+// ═══════════════════════════════════════════════════════════════════
+async function renderKumanyaRapor(){
+  DB = await dbLoad();
+  const allK = (DB.kumanya||[]).filter(r => {
+    if(r.turBaslangic) return r.turBaslangic.startsWith(String(activeYil));
+    return String(new Date(r.ts).getFullYear())===String(activeYil);
+  });
+
+  const bolgeler = getKumanyaBolgeler();
+
+  // Genel KPI'lar
+  const genSatis   = allK.reduce((a,r)=>a+(r.musteriSatis||0),0);
+  const genOdeme   = allK.reduce((a,r)=>a+(r.tedarikciOdeme||0),0);
+  const genKomiyon = allK.reduce((a,r)=>a+(r.komisyonTutar||0),0);
+  const genKar     = genSatis - genOdeme;
+
+  document.getElementById('rapor-kpis').innerHTML = `
+    <div class="kpi" style="--ka:linear-gradient(90deg,#0b7a6e,#18b4a2);--kc:var(--teal2)">
+      <span class="kpi-icon">💵</span>
+      <div class="kpi-lbl">Toplam Müşteri Satış</div><div class="kpi-val">${tryMoney(genSatis)}</div><div class="kpi-sub">${allK.length} kayıt</div></div>
+    <div class="kpi" style="--ka:linear-gradient(90deg,#1a4a7a,#60a5fa);--kc:var(--blue2)">
+      <span class="kpi-icon">🏷</span>
+      <div class="kpi-lbl">Toplam Komisyon</div><div class="kpi-val">${tryMoney(genKomiyon)}</div><div class="kpi-sub">Şirket geliri</div></div>
+    <div class="kpi" style="--ka:linear-gradient(90deg,#b83030,#f87171);--kc:var(--red2)">
+      <span class="kpi-icon">🏪</span>
+      <div class="kpi-lbl">Tedarikçi Ödemeleri</div><div class="kpi-val">${tryMoney(genOdeme)}</div><div class="kpi-sub">${allK.filter(r=>r.odemeDurum!=='odendi').length} bekliyor</div></div>
+    <div class="kpi" style="--ka:linear-gradient(90deg,#156b3a,#22c55e);--kc:var(--green2)">
+      <span class="kpi-icon">💰</span>
+      <div class="kpi-lbl">Net Kâr</div><div class="kpi-val">${tryMoney(genKar)}</div><div class="kpi-sub">${bolgeler.length} bölge</div></div>`;
+
+  if(!allK.length){
+    document.getElementById('rapor-content').innerHTML='<div class="empty-state"><div class="es-icon">📊</div><div class="es-text">Bu yıla ait kumanya kaydı yok.</div></div>';
+    return;
+  }
+
+  // Her bölge için özet tablo
+  const bolgeBlocks = bolgeler.map(bolge => {
+    const bData = allK.filter(r=>r.bolge===bolge);
+    if(!bData.length) return '';
+
+    // Tedarikçi bazında grupla
+    const tMap = {};
+    bData.forEach(r => {
+      if(!tMap[r.tedarikci]) tMap[r.tedarikci]={satis:0,odeme:0,komisyon:0,kar:0,bekleyen:0,toplam:0};
+      tMap[r.tedarikci].satis    += r.musteriSatis||0;
+      tMap[r.tedarikci].odeme    += r.tedarikciOdeme||0;
+      tMap[r.tedarikci].komisyon += r.komisyonTutar||0;
+      tMap[r.tedarikci].kar      += (r.musteriSatis||0)-(r.tedarikciOdeme||0);
+      if(r.odemeDurum!=='odendi') tMap[r.tedarikci].bekleyen++;
+      tMap[r.tedarikci].toplam++;
+    });
+
+    const bSatis   = bData.reduce((a,r)=>a+(r.musteriSatis||0),0);
+    const bOdeme   = bData.reduce((a,r)=>a+(r.tedarikciOdeme||0),0);
+    const bKom     = bData.reduce((a,r)=>a+(r.komisyonTutar||0),0);
+    const bKar     = bSatis - bOdeme;
+
+    const rows = Object.entries(tMap).sort((a,b)=>b[1].satis-a[1].satis).map(([tdr,v]) => `<tr>
+      <td><span style="font-weight:600">${getTdrEmoji(tdr)} ${tdr}</span></td>
+      <td class="mono fw" style="color:var(--teal2)">${tryMoney(v.satis)}</td>
+      <td class="mono" style="color:var(--blue2)">${tryMoney(v.komisyon)}</td>
+      <td class="mono" style="color:var(--red2)">${tryMoney(v.odeme)}</td>
+      <td class="mono fw" style="color:${v.kar>=0?'var(--green2)':'var(--red2)'}">${tryMoney(v.kar)}</td>
+      <td style="font-size:10px;color:var(--ink3)">${v.toplam} kayıt${v.bekleyen?` · <span style="color:var(--red2)">⏳${v.bekleyen}</span>`:''}</td>
+    </tr>`).join('');
+
+    return `<div class="panel" style="margin-bottom:20px">
+      <div class="panel-hd" style="margin-bottom:14px">
+        <div>
+          <div class="panel-title" style="font-size:16px">📍 ${bolge}</div>
+          <div class="panel-sub">${bData.length} işlem · ${Object.keys(tMap).length} tedarikçi</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:10px;color:var(--ink3);margin-bottom:2px">Net Kâr</div>
+          <div style="font-size:22px;font-weight:700;color:${bKar>=0?'var(--green2)':'var(--red2)'}">${tryMoney(bKar)}</div>
+          <div style="font-size:10px;color:var(--blue2)">Komisyon: ${tryMoney(bKom)}</div>
+        </div>
+      </div>
+      <div class="tbl-outer" style="margin-bottom:0"><div class="tbl-scroll">
+        <table>
+          <thead><tr>
+            <th>Tedarikçi</th>
+            <th>Müşteri Satış</th>
+            <th>Komisyon</th>
+            <th>Tedarikçi Ödemesi</th>
+            <th>Net Kâr</th>
+            <th></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot><tr style="border-top:2px solid rgba(255,255,255,0.1);font-weight:700">
+            <td>TOPLAM</td>
+            <td class="mono fw" style="color:var(--teal2)">${tryMoney(bSatis)}</td>
+            <td class="mono" style="color:var(--blue2)">${tryMoney(bKom)}</td>
+            <td class="mono" style="color:var(--red2)">${tryMoney(bOdeme)}</td>
+            <td class="mono fw" style="color:${bKar>=0?'var(--green2)':'var(--red2)'}">${tryMoney(bKar)}</td>
+            <td></td>
+          </tr></tfoot>
+        </table>
+      </div></div>
+    </div>`;
+  }).join('');
+
+  // Tüm bölgeler özet tablosu
+  const tumBolgeRows = bolgeler.map(bolge => {
+    const bData = allK.filter(r=>r.bolge===bolge);
+    if(!bData.length) return '';
+    const s=bData.reduce((a,r)=>a+(r.musteriSatis||0),0);
+    const o=bData.reduce((a,r)=>a+(r.tedarikciOdeme||0),0);
+    const k=bData.reduce((a,r)=>a+(r.komisyonTutar||0),0);
+    return `<tr>
+      <td style="font-weight:600">📍 ${bolge}</td>
+      <td class="mono fw" style="color:var(--teal2)">${tryMoney(s)}</td>
+      <td class="mono" style="color:var(--blue2)">${tryMoney(k)}</td>
+      <td class="mono" style="color:var(--red2)">${tryMoney(o)}</td>
+      <td class="mono fw" style="color:${s-o>=0?'var(--green2)':'var(--red2)'}">${tryMoney(s-o)}</td>
+      <td style="font-size:10px;color:var(--ink3)">${bData.length} kayıt</td>
+    </tr>`;
+  }).join('');
+
+  const genelOzet = `<div class="panel" style="border:1px solid rgba(96,165,250,0.25);margin-bottom:20px">
+    <div class="panel-hd" style="margin-bottom:14px">
+      <div>
+        <div class="panel-title" style="font-size:16px">🌍 Tüm Bölgeler — Genel Özet (${activeYil})</div>
+        <div class="panel-sub">${allK.length} toplam kayıt</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:10px;color:var(--ink3);margin-bottom:2px">Genel Net Kâr</div>
+        <div style="font-size:24px;font-weight:700;color:${genKar>=0?'var(--green2)':'var(--red2)'}">${tryMoney(genKar)}</div>
+      </div>
+    </div>
+    <div class="tbl-outer" style="margin-bottom:0"><div class="tbl-scroll">
+      <table>
+        <thead><tr>
+          <th>Bölge</th><th>Müşteri Satış</th><th>Komisyon</th><th>Tedarikçi Ödemesi</th><th>Net Kâr</th><th></th>
+        </tr></thead>
+        <tbody>${tumBolgeRows}</tbody>
+        <tfoot><tr style="border-top:2px solid rgba(255,255,255,0.1);font-weight:700">
+          <td>GENEL TOPLAM</td>
+          <td class="mono fw" style="color:var(--teal2)">${tryMoney(genSatis)}</td>
+          <td class="mono" style="color:var(--blue2)">${tryMoney(genKomiyon)}</td>
+          <td class="mono" style="color:var(--red2)">${tryMoney(genOdeme)}</td>
+          <td class="mono fw" style="color:${genKar>=0?'var(--green2)':'var(--red2)'}">${tryMoney(genKar)}</td>
+          <td></td>
+        </tr></tfoot>
+      </table>
+    </div></div>
+  </div>`;
+
+  document.getElementById('rapor-content').innerHTML = genelOzet + bolgeBlocks;
+}
+window.renderKumanyaRapor = renderKumanyaRapor;
+
 function getTdrEmoji(t){ return {'Kasap':'🥩','Manav':'🥦','Migros':'🛒','Balık':'🐟','Alkol':'🍷'}[t]||'🏪'; }
 
 async function updateOdemeDurum(id, durum){
@@ -5028,7 +5430,13 @@ window.saveKumanyaSatis = saveKumanyaSatis;
 window.saveMenuSatis = saveMenuSatis;
 window.editKumanyaSatis = editKumanyaSatis;
 window.editMenuSatis = editMenuSatis;
-window.onKfTedarikciChange = onKfTedarikciChange;
+window.kfModalRezChange = kfModalRezChange;
+window.onKfTedarikciChange = kfSatirTdrChange;
+window.calcKumanyaKar = kfSatirHesapla;
+window.kfSatirEkle = kfSatirEkle;
+window.kfSatirTdrChange = kfSatirTdrChange;
+window.kfSatirHesapla = kfSatirHesapla;
+window.kfSatirSil = kfSatirSil;
 window.deleteKumanyaGroup = deleteKumanyaGroup;
 window.deleteKumanyaRecord = deleteKumanyaRecord;
 window.updateOdemeDurum = updateOdemeDurum;
@@ -5037,7 +5445,7 @@ window.addKumanyaBolge = addKumanyaBolge;
 window.removeKumanyaBolge = removeKumanyaBolge;
 window.addKumanyaTedarikci = addKumanyaTedarikci;
 window.removeKumanyaTedarikci = removeKumanyaTedarikci;
-window.calcKumanyaKar = calcKumanyaKar;
+window.calcKumanyaKar = kfSatirHesapla;
 window.calcMenuKar = calcMenuKar;
 window.onKumanyaRezChange = onKumanyaRezChange;
 
