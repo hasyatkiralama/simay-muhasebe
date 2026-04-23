@@ -2373,9 +2373,7 @@ function openModal(id, title){
   document.getElementById(id).classList.add('open');
 }
 function closeModal(id){ document.getElementById(id).classList.remove('open'); }
-document.querySelectorAll('.modal-bg').forEach(bg => {
-  bg.addEventListener('click', e => { if(e.target===bg) bg.classList.remove('open'); });
-});
+// Modal dışına tıklayınca kapanma devre dışı — sadece X butonu ile çıkış
 
 // ═══════════════════════════════════════════════════════════════════
 //  TOAST
@@ -2603,8 +2601,11 @@ async function saveSimay(){
   const misafirRaw = document.getElementById('fs-misafir').value.trim();
   const misafir = misafirRaw.replace(/(^|\s)(\S)/g, (m, space, ch) => space + ch.toLocaleUpperCase('tr-TR'));
 
+  // Düzenleme modunda orijinal kayıt tarihini koru
+  const existingSimay = id ? DB.simay.find(x=>x.id===id) : null;
   const r = {
-    id: id||uid(), ts: Date.now(),
+    id: id||uid(), ts: existingSimay ? existingSimay.ts : Date.now(),
+    updatedAt: id ? Date.now() : undefined,
     misafir,
     tekne: document.getElementById('fs-tekne').value,
     gliman: document.getElementById('fs-gliman').value.trim(),
@@ -2646,8 +2647,11 @@ async function saveAcente(){
   const ton = parseFloat(document.getElementById('fa-ton').value)||0;
   const karRaw = parseFloat(document.getElementById('fa-kar').value);
   const kar = isNaN(karRaw) ? bedel-todeme : karRaw;
+  // Düzenleme modunda orijinal kayıt tarihini koru
+  const existingAcente = id ? DB.acente.find(x=>x.id===id) : null;
   const r = {
-    id: id||uid(), ts: Date.now(),
+    id: id||uid(), ts: existingAcente ? existingAcente.ts : Date.now(),
+    updatedAt: id ? Date.now() : undefined,
     misafir: document.getElementById('fa-misafir').value.trim(),
     tekne: document.getElementById('fa-tekne').value.trim(),
     gliman: document.getElementById('fa-gliman').value.trim(),
