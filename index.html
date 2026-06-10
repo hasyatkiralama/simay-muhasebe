@@ -2253,12 +2253,6 @@ async function dbSave(d){
 async function switchYear(yil){
   yil = parseInt(yil);
   const currentYear = new Date().getFullYear();
-  if(yil > currentYear){
-    if(!confirm(yil + ' yılına geçmek istiyor musunuz? Bu yıl için yeni boş bir kayıt oluşturulacak.')){ 
-      document.getElementById('yil-selector').value = activeYil;
-      return; 
-    }
-  }
   activeYil = yil;
   isReadOnly = yil < currentYear;
   // Filtreleri sıfırla
@@ -3140,9 +3134,11 @@ async function renderSimayTable(){
   tbody.innerHTML = data.map((r,i)=>{
     const oLabel = ODEME_BADGE[r.odemeDurum||'bekliyor'] || r.odemeDurum || '—';
     const fLabel = FATURA_BADGE[r.faturaDurum||'kesilmedi'];
-    return `<tr class="clickable" onclick="showSimayDetail('${r.id}')">
+    const girisYil = r.giris ? parseInt(r.giris.slice(0,4)) : activeYil;
+    const yilFarki = girisYil !== activeYil;
+    return `<tr class="clickable" onclick="showSimayDetail('${r.id}')" style="${yilFarki?'background:rgba(232,184,75,0.06)':''}">
       <td style="color:var(--ink3)">${i+1}</td>
-      <td class="fw">${r.misafir}</td>
+      <td class="fw">${r.misafir}${yilFarki?` <span style="background:rgba(232,184,75,.2);color:var(--gold2);border-radius:4px;padding:1px 5px;font-size:9px;font-weight:700">${girisYil}</span>`:''}</td>
       <td><span class="badge b-simay">${r.tekne}</span></td>
       <td style="color:var(--ink2)">${r.gliman||'—'}</td>
       <td style="color:var(--ink2)">${r.climan||'—'}</td>
@@ -3151,6 +3147,7 @@ async function renderSimayTable(){
       <td><span style="font-size:10px;font-weight:600">${oLabel}</span></td>
       <td>${fLabel}</td>
       <td class="td-actions">
+        ${yilFarki?`<button class="btn btn-gold btn-xs" onclick="event.stopPropagation();moveRecordToYear('simay','${r.id}')" title="${girisYil} yılına taşı">→ ${girisYil}</button>`:''}
         <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();editSimayForm('${r.id}')">Düzenle</button>
         <button class="btn btn-danger btn-xs" onclick="event.stopPropagation();deleteRecord('simay','${r.id}')">Sil</button>
       </td>
@@ -3211,9 +3208,11 @@ async function renderAcenteTable(){
   tbody.innerHTML=data.map((r,i)=>{
     const oLabel = ODEME_BADGE[r.odemeDurum||'bekliyor'] || r.odemeDurum || '—';
     const fLabel = FATURA_BADGE[r.faturaDurum||'kesilmedi'];
-    return `<tr class="clickable" onclick="showAcenteDetail('${r.id}')">
+    const girisYil = r.giris ? parseInt(r.giris.slice(0,4)) : activeYil;
+    const yilFarki = girisYil !== activeYil;
+    return `<tr class="clickable" onclick="showAcenteDetail('${r.id}')" style="${yilFarki?'background:rgba(232,184,75,0.06)':''}">
       <td style="color:var(--ink3)">${i+1}</td>
-      <td class="fw">${r.misafir}</td>
+      <td class="fw">${r.misafir}${yilFarki?` <span style="background:rgba(232,184,75,.2);color:var(--gold2);border-radius:4px;padding:1px 5px;font-size:9px;font-weight:700">${girisYil}</span>`:''}</td>
       <td>${r.tekne}</td>
       <td style="color:var(--ink2)">${r.gliman||'—'}</td>
       <td style="color:var(--ink2)">${r.climan||'—'}</td>
@@ -3222,6 +3221,7 @@ async function renderAcenteTable(){
       <td><span style="font-size:10px;font-weight:600">${oLabel}</span></td>
       <td>${fLabel}</td>
       <td class="td-actions">
+        ${yilFarki?`<button class="btn btn-gold btn-xs" onclick="event.stopPropagation();moveRecordToYear('acente','${r.id}')" title="${girisYil} yılına taşı">→ ${girisYil}</button>`:''}
         <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();editAcenteForm('${r.id}')">Düzenle</button>
         <button class="btn btn-danger btn-xs" onclick="event.stopPropagation();deleteRecord('acente','${r.id}')">Sil</button>
       </td>
@@ -3413,13 +3413,17 @@ async function renderRezervasyonPage(){
           const gelir = r._tip==='simay' ? r.bedel : r.kar;
           const liman = [r.gliman,r.climan].filter(Boolean).join(' → ');
           const isAcente = r._tip==='acente';
-          return `<div class="rez-card ${isAcente?'ace':''}" onclick="${isAcente?`showAcenteDetail('${r.id}')`:`showSimayDetail('${r.id}')`}" style="cursor:pointer;transition:transform .15s,box-shadow .15s" onmouseenter="this.style.transform='translateY(-2px)'" onmouseleave="this.style.transform=''">
+          // Giriş tarihinden 1 gün sonra "Tamamlandı" göster
+          const birGunSonra = r.giris ? (()=>{ const d=new Date(r.giris); d.setDate(d.getDate()+1); return d.toISOString().slice(0,10); })() : '';
+          const tamamlandi = birGunSonra && bugunStr >= birGunSonra;
+          return `<div class="rez-card ${isAcente?'ace':''}" onclick="${isAcente?`showAcenteDetail('${r.id}')`:`showSimayDetail('${r.id}')`}" style="cursor:pointer;transition:transform .15s,box-shadow .15s;position:relative;overflow:hidden" onmouseenter="this.style.transform='translateY(-2px)'" onmouseleave="this.style.transform=''">
+            ${tamamlandi?`<svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"><line x1="100%" y1="0" x2="0" y2="100%" stroke="rgba(248,113,113,0.45)" stroke-width="2"/></svg>`:''}${tamamlandi?`<div style="position:absolute;top:8px;right:8px;background:rgba(34,197,94,0.15);color:var(--green2);border:1px solid rgba(34,197,94,0.3);border-radius:20px;padding:2px 9px;font-size:9px;font-weight:700;letter-spacing:.5px">✅ Tamamlandı</div>`:''}
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">
               <div style="flex:1;min-width:0">
                 <div class="rez-card-name" style="font-size:14px;font-weight:600;color:#e4eef6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.misafir}</div>
                 <div style="font-size:11px;color:var(--${isAcente?'gold2':'teal2'});margin-top:2px">${isAcente?'🤝':'⛵'} ${r.tekne}</div>
               </div>
-              <span class="badge ${isAcente?'':'b-simay'}" style="${isAcente?'background:rgba(190,138,32,.15);color:var(--gold2);border:1px solid rgba(190,138,32,.25)':''}">
+              <span class="badge ${isAcente?'':'b-simay'}" style="${isAcente?'background:rgba(190,138,32,.15);color:var(--gold2);border:1px solid rgba(190,138,32,.25)':''}${tamamlandi?';margin-top:22px':''}">
                 ${isAcente?'Acenta':'Simay'}
               </span>
             </div>
@@ -3450,18 +3454,22 @@ async function renderRezervasyonPage(){
 // ═══════════════════════════════════════════════════════════════════
 async function renderRaporlar(){
   DB=await dbLoad();
-  const simayT=DB.simay.reduce((a,r)=>a+(r.kdvliBedel||(r.bedel+(r.kdvTutar||0))),0);
-  const acenteT=DB.acente.reduce((a,r)=>a+r.kar,0);
-  const giderT=DB.giderler.reduce((a,r)=>a+r.tutar,0);
-  const giderSimay=DB.giderler.filter(r=>!r.tip||r.tip==='simay').reduce((a,r)=>a+r.tutar,0);
-  const giderAcenta=DB.giderler.filter(r=>r.tip==='acenta').reduce((a,r)=>a+r.tutar,0);
+  // Yıl filtresi — tüm raporlar aktif yılın GİRİŞ tarihine göre hesaplanır
+  const ySimay  = DB.simay.filter(r=>r.giris && r.giris.startsWith(String(activeYil)));
+  const yAcente = DB.acente.filter(r=>r.giris && r.giris.startsWith(String(activeYil)));
+  const yGider  = DB.giderler.filter(r=>r.tarih && r.tarih.startsWith(String(activeYil)));
+  const simayT=ySimay.reduce((a,r)=>a+(r.kdvliBedel||(r.bedel+(r.kdvTutar||0))),0);
+  const acenteT=yAcente.reduce((a,r)=>a+r.kar,0);
+  const giderT=yGider.reduce((a,r)=>a+r.tutar,0);
+  const giderSimay=yGider.filter(r=>!r.tip||r.tip==='simay').reduce((a,r)=>a+r.tutar,0);
+  const giderAcenta=yGider.filter(r=>r.tip==='acenta').reduce((a,r)=>a+r.tutar,0);
   const toplam=simayT+acenteT;
   const net=toplam-giderT;
   const pct=DB.cfg.hedef>0?(toplam/DB.cfg.hedef*100).toFixed(1):0;
 
   // Net strip
   document.getElementById('net-strip').innerHTML=`
-    <div class="ns-item"><div class="ns-lbl">Toplam Gelir</div><div class="ns-val" style="color:var(--gold2)">${money(toplam)}</div><div class="ns-sub">${DB.simay.length+DB.acente.length} toplam satış</div></div>
+    <div class="ns-item"><div class="ns-lbl">Toplam Gelir</div><div class="ns-val" style="color:var(--gold2)">${money(toplam)}</div><div class="ns-sub">${ySimay.length+yAcente.length} toplam satış</div></div>
     <div class="ns-div"></div>
     <div class="ns-item"><div class="ns-lbl">Gider (Toplam)</div><div class="ns-val" style="color:var(--red2)">−${money(giderT)}</div><div class="ns-sub"><span style="color:var(--teal3)">⛵ ${money(giderSimay)}</span> · <span style="color:var(--gold3)">🤝 ${money(giderAcenta)}</span></div></div>
     <div class="ns-div"></div>
@@ -3492,19 +3500,19 @@ async function renderRaporlar(){
   document.getElementById('donut-total').textContent = toplam>=1000000 ? '€'+(toplam/1000000).toFixed(2)+'M' : money(toplam);
   document.getElementById('donut-legend').innerHTML=`
     <div class="dl-item"><div class="dl-bar" style="background:linear-gradient(180deg,#18b4a2,#0b7a6e)"></div>
-      <div class="dl-info"><div class="dl-name">Simay Tekneleri</div><div class="dl-sub">${money(simayT)} · ${DB.simay.length} res.</div></div>
+      <div class="dl-info"><div class="dl-name">Simay Tekneleri</div><div class="dl-sub">${money(simayT)} · ${ySimay.length} res.</div></div>
       <div class="dl-pct" style="color:var(--teal2)">${(sPct*100).toFixed(1)}%</div>
     </div>
     <div class="dl-item"><div class="dl-bar" style="background:linear-gradient(180deg,#e8b84b,#be8a20)"></div>
-      <div class="dl-info"><div class="dl-name">Acenta</div><div class="dl-sub">${money(acenteT)} · ${DB.acente.length} res.</div></div>
+      <div class="dl-info"><div class="dl-name">Acenta</div><div class="dl-sub">${money(acenteT)} · ${yAcente.length} res.</div></div>
       <div class="dl-pct" style="color:var(--gold2)">${(aPct*100).toFixed(1)}%</div>
     </div>`;
 
   // Aylık tablo
   const ayMap={};
-  DB.simay.forEach(r=>{const m=getMonth(r.giris);if(m){ayMap[m]=ayMap[m]||{s:0,a:0,g:0};ayMap[m].s+=r.bedel}});
-  DB.acente.forEach(r=>{const m=getMonth(r.giris);if(m){ayMap[m]=ayMap[m]||{s:0,a:0,g:0};ayMap[m].a+=r.kar}});
-  DB.giderler.forEach(r=>{const m=getMonth(r.tarih);if(m){ayMap[m]=ayMap[m]||{s:0,a:0,gs:0,ga:0};if(r.tip==='acenta')ayMap[m].ga+=r.tutar;else ayMap[m].gs+=r.tutar;}});
+  ySimay.forEach(r=>{const m=getMonth(r.giris);if(m){ayMap[m]=ayMap[m]||{s:0,a:0,g:0};ayMap[m].s+=r.bedel}});
+  yAcente.forEach(r=>{const m=getMonth(r.giris);if(m){ayMap[m]=ayMap[m]||{s:0,a:0,g:0};ayMap[m].a+=r.kar}});
+  yGider.forEach(r=>{const m=getMonth(r.tarih);if(m){ayMap[m]=ayMap[m]||{s:0,a:0,gs:0,ga:0};if(r.tip==='acenta')ayMap[m].ga+=r.tutar;else ayMap[m].gs+=r.tutar;}});
   document.getElementById('rapor-aylik-tbody').innerHTML = Object.keys(ayMap).sort((a,b)=>+a-+b).map(m=>{
     const d=ayMap[m]; const t=d.s+d.a; const g=(d.gs||0)+(d.ga||0); const n=t-g;
     return `<tr>
@@ -3519,7 +3527,7 @@ async function renderRaporlar(){
 
   // Tekne bazlı
   const tkMap={};
-  DB.simay.forEach(r=>{tkMap[r.tekne]=tkMap[r.tekne]||{c:0,n:0};tkMap[r.tekne].c+=r.bedel;tkMap[r.tekne].n++});
+  ySimay.forEach(r=>{tkMap[r.tekne]=tkMap[r.tekne]||{c:0,n:0};tkMap[r.tekne].c+=r.bedel;tkMap[r.tekne].n++});
   const maxC=Math.max(...Object.values(tkMap).map(v=>v.c),1);
   document.getElementById('rapor-tekne').innerHTML = Object.entries(tkMap).sort((a,b)=>b[1].c-a[1].c).map(([t,v])=>`
     <div class="hbar-row">
@@ -3530,7 +3538,7 @@ async function renderRaporlar(){
 
   // Sorumlu
   const sMap={};
-  DB.acente.forEach(r=>{const s=(r.sorumlu||'—').trim();sMap[s]=sMap[s]||{k:0,n:0};sMap[s].k+=r.kar;sMap[s].n++});
+  yAcente.forEach(r=>{const s=(r.sorumlu||'—').trim();sMap[s]=sMap[s]||{k:0,n:0};sMap[s].k+=r.kar;sMap[s].n++});
   const topS=Object.values(sMap).reduce((a,v)=>a+v.k,0);
   document.getElementById('rapor-sorumlu').innerHTML = Object.entries(sMap).sort((a,b)=>b[1].k-a[1].k).map(([n,v],i)=>`
     <div class="hbar-row">
@@ -3541,17 +3549,17 @@ async function renderRaporlar(){
 
   // Acenta bazlı Simay satışları
   const acMap={};
-  DB.simay.forEach(r=>{
+  ySimay.forEach(r=>{
     const a = (r.acente||'').trim();
     if(!a) return;
     acMap[a]=acMap[a]||{c:0,n:0};
     acMap[a].c+=r.bedel;
     acMap[a].n++;
   });
-  const dogrudan = DB.simay.filter(r=>!(r.acente||'').trim()).length;
-  const dogruCiro = DB.simay.filter(r=>!(r.acente||'').trim()).reduce((a,r)=>a+r.bedel,0);
+  const dogrudan = ySimay.filter(r=>!(r.acente||'').trim()).length;
+  const dogruCiro = ySimay.filter(r=>!(r.acente||'').trim()).reduce((a,r)=>a+r.bedel,0);
   const acEl = document.getElementById('rapor-acente-simay');
-  if(!Object.keys(acMap).length && !DB.simay.length){
+  if(!Object.keys(acMap).length && !ySimay.length){
     acEl.innerHTML='<div class="empty-state"><div class="es-text">Henüz Simay satışı yok</div></div>';
   } else {
     const maxAc = Math.max(...Object.values(acMap).map(v=>v.c), dogruCiro, 1);
@@ -3580,9 +3588,9 @@ async function renderRaporlar(){
     acEl.innerHTML = (rows || '') + dogruRow || '<div class="empty-state"><div class="es-text">Acente verisi yok (tüm satışlar doğrudan)</div></div>';
   }
 
-  // Rezervasyon alım tarihi analizi (ts = sisteme girilen tarih)
+  // Rezervasyon alım tarihi analizi (ts = sisteme girilen tarih, tur yılına göre filtreli)
   const alisMap = {};
-  DB.simay.forEach(r => {
+  ySimay.forEach(r => {
     if(!r.ts) return;
     const d = new Date(r.ts);
     const m = d.getMonth()+1;
@@ -3590,7 +3598,7 @@ async function renderRaporlar(){
     alisMap[m].s += r.bedel;
     alisMap[m].sN++;
   });
-  DB.acente.forEach(r => {
+  yAcente.forEach(r => {
     if(!r.ts) return;
     const d = new Date(r.ts);
     const m = d.getMonth()+1;
@@ -3697,6 +3705,51 @@ async function saveSettings(){
   await dbSave(DB); buildTekneSelect(); await updateSidebar();
   toast('Ayarlar kaydedildi ✓');
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  YILLAR ARASI KAYIT TAŞIMA
+// ═══════════════════════════════════════════════════════════════════
+async function moveRecordToYear(tip, id){
+  // Kaydı bul
+  const kayit = (DB[tip]||[]).find(r=>r.id===id);
+  if(!kayit){ toast('Kayıt bulunamadı','err'); return; }
+  const hedefYil = parseInt(kayit.giris.slice(0,4));
+  if(!hedefYil || hedefYil === activeYil){ toast('Kayıt zaten bu yılda','err'); return; }
+  if(!confirm(`Bu kaydı ${hedefYil} yılına taşımak istiyor musunuz?\n\n${kayit.misafir} — ${kayit.tekne}\nGiriş: ${fmtDate(kayit.giris)}`)){ return; }
+
+  // 1) Kayıtı bu yıldan sil
+  DB[tip] = DB[tip].filter(r=>r.id!==id);
+  await dbSave(DB);
+
+  // 2) Hedef yılı yükle, kaydı ekle, kaydet
+  const hedefDB = await dbLoad(hedefYil);
+  hedefDB[tip] = hedefDB[tip]||[];
+  // Zaten eklenmiş mi kontrol et
+  if(!hedefDB[tip].find(r=>r.id===id)){
+    hedefDB[tip].push(kayit);
+  }
+  // Hedef yıl DB'sine kaydet (geçici olarak activeYil'i değiştir)
+  const oncekiYil = activeYil;
+  const oncekiReadOnly = isReadOnly;
+  activeYil = hedefYil;
+  isReadOnly = false;
+  try {
+    const ref = getDocRef(hedefYil);
+    await ref.set(JSON.parse(JSON.stringify(hedefDB)));
+    localStorage.setItem(STORE_KEY+'_'+hedefYil, JSON.stringify(hedefDB));
+  } catch(e){
+    console.error('Taşıma hatası:', e);
+    localStorage.setItem(STORE_KEY+'_'+hedefYil, JSON.stringify(hedefDB));
+    toast('İnternet bağlantısı yok — yerel kaydedildi','info');
+  } finally {
+    activeYil = oncekiYil;
+    isReadOnly = oncekiReadOnly;
+  }
+  toast(`Kayıt ${hedefYil} yılına taşındı ✓`);
+  await updateSidebar();
+  await refreshCurrentPage();
+}
+window.moveRecordToYear = moveRecordToYear;
 async function resetData(){
   await sifreOnay(
     '⚠️ TÜM VERİLER SİLİNECEK! Tüm satış ve gider kayıtları kalıcı olarak silinir. Bu işlem geri alınamaz.',
