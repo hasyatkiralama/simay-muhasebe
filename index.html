@@ -1233,12 +1233,16 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
             stroke-dasharray="389.6" id="donut-simay" stroke-dashoffset="389.6" stroke-linecap="butt"/>
           <circle cx="80" cy="80" r="62" fill="none" stroke="url(#dg2)" stroke-width="22"
             stroke-dasharray="389.6" id="donut-acente" stroke-dashoffset="389.6" stroke-linecap="butt"/>
+
           <defs>
             <linearGradient id="dg1" x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%" stop-color="#0b7a6e"/><stop offset="100%" stop-color="#18b4a2"/>
             </linearGradient>
             <linearGradient id="dg2" x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%" stop-color="#be8a20"/><stop offset="100%" stop-color="#e8b84b"/>
+            </linearGradient>
+            <linearGradient id="dg3" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#1a4a7a"/><stop offset="100%" stop-color="#60a5fa"/>
             </linearGradient>
           </defs>
         </svg>
@@ -1792,7 +1796,7 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
       </div>
       <div class="form-grid">
         <div class="fg span2"><label>Misafir Adı Soyadı *</label><input type="text" id="fa-misafir" placeholder="Ad Soyad veya Firma" oninput="applyTitleCase(this)"></div>
-        <div class="fg"><label>Tekne Adı *</label><input type="text" id="fa-tekne" placeholder="By CF, MEİRA..."></div>
+        <div class="fg"><label>Tekne Adı *</label><input type="text" id="fa-tekne" placeholder="By CF, MEİRA..." style="text-transform:uppercase"></div>
         <div class="fg"><label>Satış Sorumlusu</label><select id="fa-sorumlu"><option value="">-- Seçin --</option></select></div>
         <div class="fg"><label>Giriş Limanı</label>
           <select id="fa-gliman">
@@ -2647,7 +2651,7 @@ async function saveAcente(){
     id: id||uid(), ts: existingAcente ? existingAcente.ts : Date.now(),
     updatedAt: id ? Date.now() : undefined,
     misafir: document.getElementById('fa-misafir').value.trim(),
-    tekne: document.getElementById('fa-tekne').value.trim(),
+    tekne: document.getElementById('fa-tekne').value.trim().toUpperCase(),
     gliman: document.getElementById('fa-gliman').value.trim(),
     climan: document.getElementById('fa-climan').value.trim(),
     giris: document.getElementById('fa-giris').value,
@@ -3015,8 +3019,14 @@ async function renderDashboard(){
   }
 
   // Tekne bars
+  const _dashYSimay = DB.simay.filter(r=>r.giris&&r.giris.startsWith(String(activeYil)));
   const tkMap = {};
-  DB.simay.forEach(r=>{ tkMap[r.tekne]=tkMap[r.tekne]||{c:0,n:0}; tkMap[r.tekne].c+=r.bedel; tkMap[r.tekne].n++; });
+  _dashYSimay.forEach(r=>{
+    const tutar = r.kdvliBedel||(r.bedel+(r.kdvTutar||0));
+    tkMap[r.tekne]=tkMap[r.tekne]||{c:0,n:0};
+    tkMap[r.tekne].c+=tutar;
+    tkMap[r.tekne].n++;
+  });
   const maxT = Math.max(...Object.values(tkMap).map(v=>v.c),1);
   const TCLR = ['linear-gradient(90deg,#0b7a6e,#18b4a2)','linear-gradient(90deg,#1a4a7a,#60a5fa)','linear-gradient(90deg,#be8a20,#e8b84b)','linear-gradient(90deg,#6c5ce7,#c39bd3)'];
   const tbEl = document.getElementById('dash-tekneler');
@@ -3489,15 +3499,27 @@ async function renderRaporlar(){
       </div>
     </div>`;
 
-  // Donut
+  // Donut — 2 segment: Simay → Acente
   const circ=389.6;
-  const sPct=toplam>0?simayT/toplam:0;
-  const aPct=toplam>0?acenteT/toplam:0;
-  const sOffset=circ-(circ*sPct);
-  const aOffset=circ*(1-aPct);
-  document.getElementById('donut-simay').setAttribute('stroke-dashoffset',sOffset);
-  document.getElementById('donut-acente').setAttribute('stroke-dashoffset',aOffset);
-  document.getElementById('donut-total').textContent = toplam>=1000000 ? '€'+(toplam/1000000).toFixed(2)+'M' : money(toplam);
+  const genelToplam = toplam;
+  const sPct = genelToplam>0 ? simayT/genelToplam : 0;
+  const aPct = genelToplam>0 ? acenteT/genelToplam : 0;
+  const sLen = circ * sPct;
+  const aLen = circ * aPct;
+  const sOffset = circ - sLen;
+  const aRotateDeg = sPct * 360;
+  const aOffset = circ - aLen;
+
+  const donutSimay = document.getElementById('donut-simay');
+  const donutAcente = document.getElementById('donut-acente');
+  donutSimay.setAttribute('stroke-dashoffset', sOffset);
+  donutSimay.style.transform = 'rotate(-90deg)';
+  donutSimay.style.transformOrigin = '80px 80px';
+  donutAcente.setAttribute('stroke-dashoffset', aOffset);
+  donutAcente.style.transform = `rotate(${aRotateDeg - 90}deg)`;
+  donutAcente.style.transformOrigin = '80px 80px';
+
+  document.getElementById('donut-total').textContent = genelToplam>=1000000 ? '€'+(genelToplam/1000000).toFixed(2)+'M' : money(genelToplam);
   document.getElementById('donut-legend').innerHTML=`
     <div class="dl-item"><div class="dl-bar" style="background:linear-gradient(180deg,#18b4a2,#0b7a6e)"></div>
       <div class="dl-info"><div class="dl-name">Simay Tekneleri</div><div class="dl-sub">${money(simayT)} · ${ySimay.length} res.</div></div>
@@ -3527,7 +3549,12 @@ async function renderRaporlar(){
 
   // Tekne bazlı
   const tkMap={};
-  ySimay.forEach(r=>{tkMap[r.tekne]=tkMap[r.tekne]||{c:0,n:0};tkMap[r.tekne].c+=r.bedel;tkMap[r.tekne].n++});
+  ySimay.forEach(r=>{
+    const tutar = r.kdvliBedel||(r.bedel+(r.kdvTutar||0));
+    tkMap[r.tekne]=tkMap[r.tekne]||{c:0,n:0};
+    tkMap[r.tekne].c+=tutar;
+    tkMap[r.tekne].n++;
+  });
   const maxC=Math.max(...Object.values(tkMap).map(v=>v.c),1);
   document.getElementById('rapor-tekne').innerHTML = Object.entries(tkMap).sort((a,b)=>b[1].c-a[1].c).map(([t,v])=>`
     <div class="hbar-row">
@@ -3867,6 +3894,22 @@ auth.onAuthStateChanged(async (user) => {
     loadTheme();
     showLoading();
     DB = await dbLoad(activeYil);
+    // Eski kumanya kayıtlarına girisYili ekle (tek seferlik migration)
+    if(DB.kumanya && DB.kumanya.some(r=>!r.girisYili)){
+      DB.kumanya = DB.kumanya.map(r => {
+        if(r.girisYili) return r;
+        // turBaslangic varsa onun yılını, yoksa ts yılını kullan
+        const y = r.turBaslangic ? parseInt(r.turBaslangic.substring(0,4)) :
+                  r.ts ? new Date(r.ts).getFullYear() : activeYil;
+        return {...r, girisYili: y};
+      });
+      await dbSave(DB);
+    }
+    // Acente tekne adlarını büyük harfe çevir (tek seferlik migration)
+    if(DB.acente && DB.acente.some(r=>r.tekne && r.tekne !== r.tekne.toUpperCase())){
+      DB.acente = DB.acente.map(r => ({...r, tekne: r.tekne ? r.tekne.toUpperCase() : r.tekne}));
+      await dbSave(DB);
+    }
     buildTekneSelect();
     buildSorumluSelect();
     buildAllBankaSelects();
@@ -4387,7 +4430,7 @@ async function renderTumSatislar(){
       _orijinal: null,
     }));
 
-  let tumData = [...simaylar, ...acentalar].sort((a,b) => (b.giris||'').localeCompare(a.giris||''));
+  let tumData = [...simaylar, ...acentalar].sort((a,b) => (a.giris||'').localeCompare(b.giris||''));
   if(q) tumData = tumData.filter(r => (r.misafir+r.tekne+(r.sorumlu||'')).toLowerCase().includes(q));
 
   const toplamSimay = simaylar.reduce((a,r) => a + r._gelirEur, 0);
@@ -4525,7 +4568,7 @@ function buildKumanyaRezSel(){
   const tumRez = [
     ...(DB.simay||[]).filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).map(r=>({id:r.id, label:'⛵ '+r.misafir+' — '+r.tekne+' ('+fmtDate(r.giris)+(r.cikis?' → '+fmtDate(r.cikis):'')+')', tekne:r.tekne, tarihB:r.giris, tarihE:r.cikis||''})),
     ...(DB.acente||[]).filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).map(r=>({id:r.id, label:'🤝 '+r.misafir+' — '+r.tekne+' ('+fmtDate(r.giris)+(r.cikis?' → '+fmtDate(r.cikis):'')+')', tekne:r.tekne, tarihB:r.giris, tarihE:r.cikis||''})),
-  ].sort((a,b)=>b.tarihB.localeCompare(a.tarihB));
+  ].sort((a,b)=>a.tarihB.localeCompare(b.tarihB));
   sel.innerHTML = '<option value="">— Tüm rezervasyonlar —</option>' +
     tumRez.map(r=>`<option value="${r.id}" data-tekne="${r.tekne}" data-b="${r.tarihB}" data-e="${r.tarihE}">${r.label}</option>`).join('');
   sel.value = activeKumanyaRezId;
@@ -4548,15 +4591,18 @@ async function renderKumanya(){
   DB = await dbLoad();
   buildKumanyaRezSel();
 
-  // Filter by year + selected rez
-  const allK = (DB.kumanya||[]).filter(r => {
-    const inYear = r.turBaslangic ? r.turBaslangic.startsWith(String(activeYil)) : String(new Date(r.ts).getFullYear())===String(activeYil);
-    return inYear && (activeKumanyaRezId==='' || r.rezervasyonId===activeKumanyaRezId);
-  });
-  const allM = (DB.menuSatis||[]).filter(r => {
-    const inYear = r.tarih ? r.tarih.startsWith(String(activeYil)) : String(new Date(r.ts).getFullYear())===String(activeYil);
-    return inYear && (activeKumanyaRezId==='' || r.rezervasyonId===activeKumanyaRezId);
-  });
+  // Filter by year + selected rez — sadece bu yılın rezervasyonlarına bağlı kayıtlar
+  const _yRezIds = new Set([
+    ...(DB.simay||[]).filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).map(r=>r.id),
+    ...(DB.acente||[]).filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).map(r=>r.id),
+  ]);
+  function _kumanyaInYear(r){ return r.rezervasyonId && _yRezIds.has(r.rezervasyonId); }
+  const allK = (DB.kumanya||[]).filter(r =>
+    _kumanyaInYear(r) && (activeKumanyaRezId==='' || r.rezervasyonId===activeKumanyaRezId)
+  );
+  const allM = (DB.menuSatis||[]).filter(r =>
+    _kumanyaInYear(r) && (activeKumanyaRezId==='' || r.rezervasyonId===activeKumanyaRezId)
+  );
 
   const topKSatis  = allK.reduce((a,r)=>a+r.musteriSatis,0);
   const topKOdeme  = allK.reduce((a,r)=>a+r.tedarikciOdeme,0);
@@ -4853,7 +4899,7 @@ function openKumanyaSatisModal(){
     const tumRez = [
       ...(DB.simay||[]).filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).map(r=>({id:r.id, label:'⛵ '+r.misafir+' — '+r.tekne+' ('+fmtDate(r.giris)+(r.cikis?' → '+fmtDate(r.cikis):'')+')' , tekne:r.tekne, b:r.giris, e:r.cikis||''})),
       ...(DB.acente||[]).filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).map(r=>({id:r.id, label:'🤝 '+r.misafir+' — '+r.tekne+' ('+fmtDate(r.giris)+(r.cikis?' → '+fmtDate(r.cikis):'')+')' , tekne:r.tekne, b:r.giris, e:r.cikis||''})),
-    ].sort((a,b)=>b.b.localeCompare(a.b));
+    ].sort((a,b)=>a.b.localeCompare(b.b));
     modalRezSel.innerHTML = '<option value="">— Rezervasyon seçin —</option>' +
       tumRez.map(r=>`<option value="${r.id}" data-tekne="${r.tekne}" data-b="${r.b}" data-e="${r.e}">${r.label}</option>`).join('');
     modalRezSel.value = activeKumanyaRezId || '';
@@ -4976,6 +5022,7 @@ async function saveKumanyaSatis(){
     const updated = {
       id: editId, ts: Date.now(), bolge, tedarikci,
       rezervasyonId:rezId, tekne, turBaslangic:turB, turBitis:turE,
+      girisYili: activeYil,
       musteriSatis, tedarikciOdeme, kar: musteriSatis-tedarikciOdeme,
       komisyonOran, komisyonTutar,
       odemeDurum: document.getElementById(`kf-s${id0}-durum`)?.value||'bekliyor',
@@ -5007,6 +5054,7 @@ async function saveKumanyaSatis(){
     yeniKayitlar.push({
       id: uid(), ts: Date.now(), bolge, tedarikci,
       rezervasyonId: rezId, tekne, turBaslangic: turB, turBitis: turE,
+      girisYili: activeYil,
       musteriSatis, tedarikciOdeme, kar: musteriSatis-tedarikciOdeme,
       komisyonOran, komisyonTutar,
       odemeDurum: document.getElementById(`kf-s${i}-durum`)?.value||'bekliyor',
@@ -5133,10 +5181,11 @@ async function renderKumanyaTedarikciler(){
   if(tabsEl) tabsEl.innerHTML = bolgeler.map(b=>`
     <button class="fb ${activeTdrBolge===b?'on':''}" onclick="setTdrBolge('${b}')">${b}</button>`).join('');
 
-  const allKumanya = (DB.kumanya||[]).filter(r => {
-    if(r.turBaslangic) return r.turBaslangic.startsWith(String(activeYil));
-    return String(new Date(r.ts).getFullYear())===String(activeYil);
-  });
+  const _yRezIdsTdr = new Set([
+    ...(DB.simay||[]).filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).map(r=>r.id),
+    ...(DB.acente||[]).filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).map(r=>r.id),
+  ]);
+  const allKumanya = (DB.kumanya||[]).filter(r => r.rezervasyonId && _yRezIdsTdr.has(r.rezervasyonId));
 
   const data = activeTdrBolge ? allKumanya.filter(r=>r.bolge===activeTdrBolge) : [];
   const tdrMap={};
@@ -5268,10 +5317,11 @@ function setTdrBolge(b){ activeTdrBolge=b; renderKumanyaTedarikciler(); }
 // ═══════════════════════════════════════════════════════════════════
 async function renderKumanyaRapor(){
   DB = await dbLoad();
-  const allK = (DB.kumanya||[]).filter(r => {
-    if(r.turBaslangic) return r.turBaslangic.startsWith(String(activeYil));
-    return String(new Date(r.ts).getFullYear())===String(activeYil);
-  });
+  const _yRezIdsRapor = new Set([
+    ...(DB.simay||[]).filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).map(r=>r.id),
+    ...(DB.acente||[]).filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).map(r=>r.id),
+  ]);
+  const allK = (DB.kumanya||[]).filter(r => r.rezervasyonId && _yRezIdsRapor.has(r.rezervasyonId));
 
   const bolgeler = getKumanyaBolgeler();
 
