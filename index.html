@@ -1233,6 +1233,8 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
             stroke-dasharray="389.6" id="donut-simay" stroke-dashoffset="389.6" stroke-linecap="butt"/>
           <circle cx="80" cy="80" r="62" fill="none" stroke="url(#dg2)" stroke-width="22"
             stroke-dasharray="389.6" id="donut-acente" stroke-dashoffset="389.6" stroke-linecap="butt"/>
+          <circle cx="80" cy="80" r="62" fill="none" stroke="url(#dg3)" stroke-width="22"
+            stroke-dasharray="389.6" id="donut-kumanya" stroke-dashoffset="389.6" stroke-linecap="butt"/>
 
           <defs>
             <linearGradient id="dg1" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -1480,8 +1482,8 @@ input:checked + .theme-slider:before{transform:translateX(18px);background:#fff}
       <button class="btn btn-teal" onclick="openModal('modal-fatura','Yeni Fatura')">+ Fatura Ekle</button>
     </div>
   </div>
-  <div class="kpi-grid" id="fatura-kpis" style="grid-template-columns:repeat(4,1fr)"></div>
   <div id="fatura-page-uyari" style="margin-bottom:16px"></div>
+  <div class="kpi-grid" id="fatura-kpis" style="grid-template-columns:repeat(4,1fr)"></div>
   <div class="filter-bar" id="fatura-filters"></div>
   <div class="search-wrap">
     <span class="search-icon">🔍</span>
@@ -2953,19 +2955,19 @@ async function renderDashboard(){
       <span class="kpi-icon">⛵</span>
       <div class="kpi-lbl">Simay Cirosu</div>
       <div class="kpi-val">${money(simayT)}</div>
-      <div class="kpi-sub">${DB.simay.length} rezervasyon</div>
+      <div class="kpi-sub">${DB.simay.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).length} rezervasyon</div>
     </div>
     <div class="kpi" style="--ka:linear-gradient(90deg,#be8a20,#e8b84b);--kc:var(--gold2)">
       <span class="kpi-icon">🤝</span>
       <div class="kpi-lbl">Acenta Kârı</div>
       <div class="kpi-val">${money(acenteT)}</div>
-      <div class="kpi-sub">${DB.acente.length} rezervasyon</div>
+      <div class="kpi-sub">${DB.acente.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).length} rezervasyon</div>
     </div>
     <div class="kpi" style="--ka:linear-gradient(90deg,#b83030,#f87171);--kc:var(--red2)">
       <span class="kpi-icon">📉</span>
       <div class="kpi-lbl">Toplam Gider</div>
       <div class="kpi-val">${money(giderT)}</div>
-      <div class="kpi-sub">${DB.giderler.length} kalem</div>
+      <div class="kpi-sub">${DB.giderler.filter(r=>r.tarih&&r.tarih.startsWith(String(activeYil))).length} kalem</div>
     </div>
     <div class="kpi" style="--ka:linear-gradient(90deg,#156b3a,#22c55e);--kc:var(--green2)">
       <span class="kpi-icon">💰</span>
@@ -3499,25 +3501,49 @@ async function renderRaporlar(){
       </div>
     </div>`;
 
-  // Donut — 2 segment: Simay → Acente
+  // Kumanya — bu yılın rezervasyonlarına bağlı kayıtların KÂRI, kura göre EUR'a çevrilir
+  const yRezIds = new Set([...ySimay.map(r=>r.id), ...yAcente.map(r=>r.id)]);
+  const yKumanya = (DB.kumanya||[]).filter(r => r.rezervasyonId && yRezIds.has(r.rezervasyonId));
+  const yMenu = (DB.menuSatis||[]).filter(r => r.rezervasyonId && yRezIds.has(r.rezervasyonId));
+  const kumanyaKarTL = yKumanya.reduce((a,r)=>a+(r.kar||0),0) + yMenu.reduce((a,r)=>a+(r.kar||0),0);
+  let tryKur = DB.cfg?.tryEurRate || 0;
+  const kurYas = DB.cfg?.tryEurRateTs ? (Date.now()-DB.cfg.tryEurRateTs) : Infinity;
+  if(!tryKur || kurYas > 3600000){
+    try {
+      const res = await fetch('https://api.exchangerate-api.com/v4/latest/EUR');
+      if(res.ok){ const d=await res.json(); if(d.rates?.TRY){ tryKur=d.rates.TRY; DB.cfg.tryEurRate=tryKur; DB.cfg.tryEurRateTs=Date.now(); } }
+    } catch(e){}
+  }
+  const kumanyaKarEur = tryKur > 0 ? kumanyaKarTL / tryKur : 0;
+  const kurBilgi = tryKur > 0 ? `1€ = ₺${tryKur.toFixed(2)}` : 'Kur yok';
+
+  // Donut — 3 segment: Simay → Acente → Kumanya
   const circ=389.6;
-  const genelToplam = toplam;
+  const genelToplam = toplam + kumanyaKarEur;
   const sPct = genelToplam>0 ? simayT/genelToplam : 0;
   const aPct = genelToplam>0 ? acenteT/genelToplam : 0;
-  const sLen = circ * sPct;
-  const aLen = circ * aPct;
-  const sOffset = circ - sLen;
-  const aRotateDeg = sPct * 360;
-  const aOffset = circ - aLen;
+  const kPct = genelToplam>0 ? kumanyaKarEur/genelToplam : 0;
+  const sLen = circ*sPct, aLen = circ*aPct, kLen = circ*kPct;
+  const sOffset = circ-sLen;
+  const aRotateDeg = sPct*360;
+  const aOffset = circ-aLen;
+  const kRotateDeg = (sPct+aPct)*360;
+  const kOffset = circ-kLen;
 
   const donutSimay = document.getElementById('donut-simay');
   const donutAcente = document.getElementById('donut-acente');
+  const donutKumanya = document.getElementById('donut-kumanya');
   donutSimay.setAttribute('stroke-dashoffset', sOffset);
   donutSimay.style.transform = 'rotate(-90deg)';
   donutSimay.style.transformOrigin = '80px 80px';
   donutAcente.setAttribute('stroke-dashoffset', aOffset);
-  donutAcente.style.transform = `rotate(${aRotateDeg - 90}deg)`;
+  donutAcente.style.transform = `rotate(${aRotateDeg-90}deg)`;
   donutAcente.style.transformOrigin = '80px 80px';
+  if(donutKumanya){
+    donutKumanya.setAttribute('stroke-dashoffset', kLen>0 ? kOffset : circ);
+    donutKumanya.style.transform = `rotate(${kRotateDeg-90}deg)`;
+    donutKumanya.style.transformOrigin = '80px 80px';
+  }
 
   document.getElementById('donut-total').textContent = genelToplam>=1000000 ? '€'+(genelToplam/1000000).toFixed(2)+'M' : money(genelToplam);
   document.getElementById('donut-legend').innerHTML=`
@@ -3528,6 +3554,10 @@ async function renderRaporlar(){
     <div class="dl-item"><div class="dl-bar" style="background:linear-gradient(180deg,#e8b84b,#be8a20)"></div>
       <div class="dl-info"><div class="dl-name">Acenta</div><div class="dl-sub">${money(acenteT)} · ${yAcente.length} res.</div></div>
       <div class="dl-pct" style="color:var(--gold2)">${(aPct*100).toFixed(1)}%</div>
+    </div>
+    <div class="dl-item"><div class="dl-bar" style="background:linear-gradient(180deg,#60a5fa,#1a4a7a)"></div>
+      <div class="dl-info"><div class="dl-name">Kumanya Kârı</div><div class="dl-sub">${money(kumanyaKarEur)} · ${yKumanya.length} kumanya · ${yMenu.length} menü<br><span style="color:var(--ink3);font-size:9px">₺${Math.round(kumanyaKarTL).toLocaleString('tr-TR')} · ${kurBilgi}</span></div></div>
+      <div class="dl-pct" style="color:var(--blue2)">${(kPct*100).toFixed(1)}%</div>
     </div>`;
 
   // Aylık tablo
@@ -4291,7 +4321,7 @@ const DURUM_LABEL = {bekliyor:'⏳ Bekliyor',kismi:'🔶 Kısmi',odendi:'✅ Öd
 
 async function renderFatura(){
   DB=await dbLoad(activeYil);
-  const data=(DB.faturalar||[]).filter(r=>r.tarih&&r.tarih.startsWith(String(activeYil))).sort((a,b)=>b.ts-a.ts);
+  const data=(DB.faturalar||[]).filter(r=>r.tarih&&r.tarih.startsWith(String(activeYil))).sort((a,b)=>a.tarih.localeCompare(b.tarih));
   const gelir=data.filter(r=>r.tur==='gelir');
   const gider=data.filter(r=>r.tur==='gider');
   const bekleyen=data.filter(r=>r.durum==='bekliyor'||r.durum==='kismi'||r.durum==='gecikti');
