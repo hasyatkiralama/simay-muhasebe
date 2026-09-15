@@ -2579,8 +2579,40 @@ function editAcenteForm(id){
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  SAVE OPERATIONS
+//  SATIŞ → FATURA TAM SENKRONİZASYON
 // ═══════════════════════════════════════════════════════════════════
+function syncFaturaFromSatis(r, tip){
+  if(!DB.faturalar) return;
+  // Önce rezervasyonId ile eşleş, bulamazsan misafir adı ile dene (eski kayıtlar için)
+  let fi = DB.faturalar.findIndex(f => f.rezervasyonId === r.id);
+  if(fi === -1) fi = DB.faturalar.findIndex(f => !f.rezervasyonId && f.rezervasyon === r.misafir);
+  if(fi === -1) return;
+  // Bulunan faturaya rezervasyonId'yi yaz (ileride doğru çalışsın)
+  if(!DB.faturalar[fi].rezervasyonId) DB.faturalar[fi].rezervasyonId = r.id;
+  const f = DB.faturalar[fi];
+  const durumMap = { odendi:'odendi', kismi:'kismi', bekliyor:'bekliyor', gecikti:'gecikti', iptal:'iptal' };
+  DB.faturalar[fi] = {
+    ...f,
+    musteri:     r.misafir    !== undefined ? r.misafir    : f.musteri,
+    rezervasyon: r.misafir    !== undefined ? r.misafir    : f.rezervasyon,
+    tarih:       r.giris      ? r.giris      : f.tarih,
+    vade:        r.cikis      !== undefined ? r.cikis      : f.vade,
+    aciklama:    (tip==='simay'?'Simay Tekneleri — ':'Acente/Dış Satış — ') + (r.tekne||'') + (r.gliman?' ('+r.gliman+(r.climan?' → '+r.climan:'')+')'  : ''),
+    tutar:       r.bedel      !== undefined ? r.bedel      : f.tutar,
+    kdvOran:     r.kdvOran    !== undefined ? r.kdvOran    : f.kdvOran,
+    kdv:         r.kdvTutar   !== undefined ? r.kdvTutar   : f.kdv,
+    toplam:      r.kdvliBedel !== undefined ? r.kdvliBedel : f.toplam,
+    odenen:      r.on         !== undefined ? r.on         : f.odenen,
+    kalan:       r.kalan      !== undefined ? r.kalan      : f.kalan,
+    para:        r.para       !== undefined ? r.para       : f.para,
+    durum:       durumMap[r.odemeDurum]    !== undefined ? durumMap[r.odemeDurum] : f.durum,
+    kesimDurum:  r.faturaDurum             !== undefined ? r.faturaDurum          : f.kesimDurum,
+    not:         r.aciklama   !== undefined ? r.aciklama   : f.not,
+  };
+}
+
+
+
 async function saveSimay(){
   if(isReadOnly){ toast('Geçmiş yıl — kayıt eklenemez','err'); closeModal('modal-simay'); return; }
   const id = document.getElementById('fs-id').value;
@@ -2631,8 +2663,8 @@ async function saveSimay(){
   const isNew = !id;
   if(id){ DB.simay = DB.simay.map(x=>x.id===id?r:x); toast('Kayıt güncellendi'); }
   else { DB.simay.push(r); toast('Simay satışı eklendi'); }
-  // Otomatik fatura oluştur
   if(isNew){ autoCreateFatura(r, 'simay'); }
+  else { syncFaturaFromSatis(r, 'simay'); }
   await dbSave(DB); closeModal('modal-simay'); clearSimayForm();
   simayFilter='all';
   await updateSidebar(); await refreshCurrentPage();
@@ -2672,8 +2704,8 @@ async function saveAcente(){
   const isNew = !id;
   if(id){ DB.acente = DB.acente.map(x=>x.id===id?r:x); toast('Kayıt güncellendi'); }
   else { DB.acente.push(r); toast('Acente satışı eklendi'); }
-  // Otomatik fatura oluştur
   if(isNew){ autoCreateFatura(r, 'acente'); }
+  else { syncFaturaFromSatis(r, 'acente'); }
   await dbSave(DB); closeModal('modal-acente'); clearAcenteForm();
   acenteFilter='all';
   await updateSidebar(); await refreshCurrentPage();
@@ -4269,8 +4301,10 @@ async function saveFatura(){
   const tutar = parseFloat(document.getElementById('ff-tutar').value)||0;
   const kdvOran = parseFloat(document.getElementById('ff-kdv-oran').value)||0;
   const kdv = tutar*kdvOran/100;
+  // Mevcut faturadan rezervasyonId'yi koru
+  const mevcutFatura = id ? (DB.faturalar||[]).find(x=>x.id===id) : null;
   const r = {
-    id: id||uid(), ts: Date.now(),
+    id: id||uid(), ts: mevcutFatura ? mevcutFatura.ts : Date.now(),
     no: document.getElementById('ff-no').value.trim(),
     tur: document.getElementById('ff-tur').value,
     tarih: document.getElementById('ff-tarih').value,
@@ -4284,12 +4318,68 @@ async function saveFatura(){
     kesimDurum: document.getElementById('ff-kesim-durum')?.value||'kesilmedi',
     para: document.getElementById('ff-para')?.value||'EUR',
     rezervasyon: document.getElementById('ff-rezervasyon').value.trim(),
+    rezervasyonId: mevcutFatura?.rezervasyonId || '',
     not: document.getElementById('ff-not').value.trim(),
   };
   if(!r.no || !r.tarih || !r.musteri){ toast('Fatura no, tarih ve müşteri zorunlu','err'); return; }
   if(!DB.faturalar) DB.faturalar=[];
   if(id){ DB.faturalar=DB.faturalar.map(x=>x.id===id?r:x); toast('Fatura güncellendi ✓'); }
   else { DB.faturalar.push(r); toast('Fatura eklendi ✓'); }
+
+  // ── Fatura → Satış kaydı tam senkronizasyonu ───────────────────
+  // rezervasyonId yoksa faturayı misafir adıyla satış kaydına bağla
+  if(!r.rezervasyonId){
+    const simayMatch = (DB.simay||[]).find(x=>x.misafir===r.musteri && !x._faturaId);
+    if(simayMatch){ r.rezervasyonId=simayMatch.id; DB.faturalar=DB.faturalar.map(x=>x.id===r.id?{...x,rezervasyonId:simayMatch.id}:x); }
+    else {
+      const acenteMatch = (DB.acente||[]).find(x=>x.misafir===r.musteri && !x._faturaId);
+      if(acenteMatch){ r.rezervasyonId=acenteMatch.id; DB.faturalar=DB.faturalar.map(x=>x.id===r.id?{...x,rezervasyonId:acenteMatch.id}:x); }
+    }
+  }
+  if(r.rezervasyonId){
+    const durumMap = { odendi:'odendi', kismi:'kismi', bekliyor:'bekliyor', gecikti:'gecikti', iptal:'iptal' };
+    const yeniOdeme  = durumMap[r.durum] || 'bekliyor';
+    const yeniFatura = r.kesimDurum || 'kesilmedi';
+
+    const si = (DB.simay||[]).findIndex(x=>x.id===r.rezervasyonId);
+    if(si !== -1){
+      DB.simay[si] = {
+        ...DB.simay[si],
+        misafir:    r.musteri   || DB.simay[si].misafir,
+        giris:      r.tarih     || DB.simay[si].giris,
+        cikis:      r.vade      || DB.simay[si].cikis,
+        bedel:      r.tutar     !== undefined ? r.tutar     : DB.simay[si].bedel,
+        kdvOran:    r.kdvOran   !== undefined ? r.kdvOran   : DB.simay[si].kdvOran,
+        kdvTutar:   r.kdv       !== undefined ? r.kdv       : DB.simay[si].kdvTutar,
+        kdvliBedel: r.toplam    !== undefined ? r.toplam    : DB.simay[si].kdvliBedel,
+        on:         r.odenen    !== undefined ? r.odenen    : DB.simay[si].on,
+        kalan:      r.kalan     !== undefined ? r.kalan     : DB.simay[si].kalan,
+        para:       r.para      || DB.simay[si].para,
+        odemeDurum: yeniOdeme,
+        faturaDurum: yeniFatura,
+        aciklama:   r.not       || DB.simay[si].aciklama,
+      };
+    }
+
+    const ai = (DB.acente||[]).findIndex(x=>x.id===r.rezervasyonId);
+    if(ai !== -1){
+      DB.acente[ai] = {
+        ...DB.acente[ai],
+        misafir:    r.musteri   || DB.acente[ai].misafir,
+        giris:      r.tarih     || DB.acente[ai].giris,
+        cikis:      r.vade      || DB.acente[ai].cikis,
+        bedel:      r.tutar     !== undefined ? r.tutar     : DB.acente[ai].bedel,
+        on:         r.odenen    !== undefined ? r.odenen    : DB.acente[ai].on,
+        kalan:      r.kalan     !== undefined ? r.kalan     : DB.acente[ai].kalan,
+        para:       r.para      || DB.acente[ai].para,
+        odemeDurum: yeniOdeme,
+        faturaDurum: yeniFatura,
+        aciklama:   r.not       || DB.acente[ai].aciklama,
+      };
+    }
+  }
+  // ────────────────────────────────────────────────────────────────
+
   await dbSave(DB); closeModal('modal-fatura'); clearFaturaForm();
   await updateSidebar(); await refreshCurrentPage();
 }
