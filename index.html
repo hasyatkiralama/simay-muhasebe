@@ -2803,8 +2803,23 @@ async function deleteRecord(type, id){
     `"${labels[type]||'Kayıt'}" silinecek. Bu işlem geri alınamaz.`,
     '🗑 Kaydı Sil',
     async () => {
-      DB[type] = DB[type].filter(x=>x.id!==id);
-      await dbSave(DB); toast('Kayıt silindi','info');
+      // Aktif yıldan sil
+      DB[type] = (DB[type]||[]).filter(x=>x.id!==id);
+      await dbSave(DB);
+      // Komşu yıl DB'lerinde de ara ve sil
+      for(const yil of [activeYil-1, activeYil+1]){
+        try {
+          const adjDB = await dbLoad(yil);
+          if((adjDB[type]||[]).find(x=>x.id===id)){
+            adjDB[type] = adjDB[type].filter(x=>x.id!==id);
+            const oncekiYil = activeYil;
+            activeYil = yil;
+            await dbSave(adjDB);
+            activeYil = oncekiYil;
+          }
+        } catch(e){}
+      }
+      toast('Kayıt silindi','info');
       await updateSidebar(); await refreshCurrentPage();
     }
   );
@@ -2820,18 +2835,35 @@ async function refreshCurrentPage(){
 // ═══════════════════════════════════════════════════════════════════
 async function updateSidebar(){
   DB = await dbLoad();
-  const simayT = DB.simay.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).reduce((a,r)=>a+(r.kdvliBedel||(r.bedel+(r.kdvTutar||0))),0);
-  const acenteT = DB.acente.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).reduce((a,r)=>a+r.kar,0);
+  const yilStr = String(activeYil);
+  // Cross-year kayıtları da dahil et
+  const adjPrev = await dbLoad(activeYil-1);
+  const adjNext = await dbLoad(activeYil+1);
+  const allSimay = [
+    ...DB.simay.filter(r=>r.giris&&r.giris.startsWith(yilStr)),
+    ...(adjPrev.simay||[]).filter(r=>r.giris&&r.giris.startsWith(yilStr)),
+    ...(adjNext.simay||[]).filter(r=>r.giris&&r.giris.startsWith(yilStr)),
+  ];
+  const allAcente = [
+    ...DB.acente.filter(r=>r.giris&&r.giris.startsWith(yilStr)),
+    ...(adjPrev.acente||[]).filter(r=>r.giris&&r.giris.startsWith(yilStr)),
+    ...(adjNext.acente||[]).filter(r=>r.giris&&r.giris.startsWith(yilStr)),
+  ];
+  // Duplicate temizle
+  const simayUniq = [...new Map(allSimay.map(r=>[r.id,r])).values()];
+  const acenteUniq = [...new Map(allAcente.map(r=>[r.id,r])).values()];
+
+  const simayT = simayUniq.reduce((a,r)=>a+(r.kdvliBedel||(r.bedel+(r.kdvTutar||0))),0);
+  const acenteT = acenteUniq.reduce((a,r)=>a+r.kar,0);
   const toplam = simayT + acenteT;
-  // Banner ciro
   const bc = document.getElementById('yil-banner-ciro');
   if(bc) bc.textContent = money(toplam);
-  document.getElementById('badge-simay').textContent = DB.simay.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).length;
+  document.getElementById('badge-simay').textContent = simayUniq.length;
   const fbadge=document.getElementById('badge-fatura');
-  if(fbadge) fbadge.textContent=(DB.faturalar||[]).filter(r=>r.tarih&&r.tarih.startsWith(String(activeYil))).length;
+  if(fbadge) fbadge.textContent=(DB.faturalar||[]).filter(r=>r.tarih&&r.tarih.startsWith(yilStr)).length;
   const tbadge=document.getElementById('badge-tum');
-  if(tbadge) tbadge.textContent=DB.simay.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).length+DB.acente.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).length;
-  document.getElementById('badge-acente').textContent = DB.acente.filter(r=>r.giris&&r.giris.startsWith(String(activeYil))).length;
+  if(tbadge) tbadge.textContent=simayUniq.length+acenteUniq.length;
+  document.getElementById('badge-acente').textContent = acenteUniq.length;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -3162,10 +3194,22 @@ async function renderSimayKPIs(){
 
 async function renderSimayTable(){
   DB=await dbLoad();
+  // Komşu yıllardan (activeYil-1, activeYil+1) giriş tarihi bu yıla ait kayıtları da çek
+  const yilStr = String(activeYil);
+  const prevDB = await dbLoad(activeYil - 1);
+  const nextDB = await dbLoad(activeYil + 1);
+  const crossYearSimay = [
+    ...(prevDB.simay||[]).filter(r => r.giris && r.giris.startsWith(yilStr)),
+    ...(nextDB.simay||[]).filter(r => r.giris && r.giris.startsWith(yilStr)),
+  ];
+  // Mevcut yılın kayıtları + diğer yıllardan bu yıla ait olanlar (duplicate engelle)
+  const currentIds = new Set((DB.simay||[]).map(r=>r.id));
+  const allSimay = [
+    ...(DB.simay||[]).filter(r => r.giris && r.giris.startsWith(yilStr)),
+    ...crossYearSimay.filter(r => !currentIds.has(r.id)).map(r=>({...r,_kayitYili:parseInt(r.giris?.slice(0,4)||activeYil)!==activeYil?activeYil-1:activeYil+1})),
+  ];
   const q = (document.getElementById('simay-search')?.value||'').toLowerCase();
-  let data = [...DB.simay]
-    .filter(r => r.giris && r.giris.startsWith(String(activeYil)))
-    .sort((a,b)=>b.ts-a.ts);
+  let data = allSimay.sort((a,b)=>b.ts-a.ts);
   if(simayFilter!=='all') data=data.filter(r=>r.tekne===simayFilter);
   if(q) data=data.filter(r=>(r.misafir+r.tekne+(r.sorumlu||'')).toLowerCase().includes(q));
   
@@ -3237,10 +3281,21 @@ async function renderAcenteKPIs(){
 
 async function renderAcenteTable(){
   DB=await dbLoad();
+  // Komşu yıllardan giriş tarihi bu yıla ait kayıtları da çek
+  const yilStr = String(activeYil);
+  const prevDB2 = await dbLoad(activeYil - 1);
+  const nextDB2 = await dbLoad(activeYil + 1);
+  const crossYearAcente = [
+    ...(prevDB2.acente||[]).filter(r => r.giris && r.giris.startsWith(yilStr)),
+    ...(nextDB2.acente||[]).filter(r => r.giris && r.giris.startsWith(yilStr)),
+  ];
+  const currentAIds = new Set((DB.acente||[]).map(r=>r.id));
+  const allAcente = [
+    ...(DB.acente||[]).filter(r => r.giris && r.giris.startsWith(yilStr)),
+    ...crossYearAcente.filter(r => !currentAIds.has(r.id)).map(r=>({...r,_kayitYili:parseInt(r.giris?.slice(0,4)||activeYil)!==activeYil?activeYil-1:activeYil+1})),
+  ];
   const q=(document.getElementById('acente-search')?.value||'').toLowerCase();
-  let data=[...DB.acente]
-    .filter(r => r.giris && r.giris.startsWith(String(activeYil)))
-    .sort((a,b)=>b.ts-a.ts);
+  let data=allAcente.sort((a,b)=>b.ts-a.ts);
   if(acenteFilter!=='all') data=data.filter(r=>(r.sorumlu||'').trim()===acenteFilter);
   if(q) data=data.filter(r=>(r.misafir+r.tekne+(r.sorumlu||'')).toLowerCase().includes(q));
   const tbody=document.getElementById('acente-tbody');
@@ -4526,29 +4581,33 @@ function onAcentaParaDegis(){
 // ═══════════════════════════════════════════════════════════════════
 async function renderTumSatislar(){
   DB = await dbLoad();
+  const yilStr = String(activeYil);
   const q = (document.getElementById('tum-search')?.value||'').toLowerCase();
 
-  // Simay satışları - bedelEur kullan (USD/TRY çevrilmiş)
-  const simaylar = DB.simay
-    .filter(r => r.giris && r.giris.startsWith(String(activeYil)))
+  // Cross-year kayıtları da çek
+  const prevDBT = await dbLoad(activeYil-1);
+  const nextDBT = await dbLoad(activeYil+1);
+
+  const toSimay = arr => (arr||[])
+    .filter(r => r.giris && r.giris.startsWith(yilStr))
     .map(r => ({
-      ...r,
-      _tip: 'simay',
-      _gelirEur: r.para && r.para !== 'EUR' ? (r.bedelEur || r.bedel) : (r.bedelEur || r.bedel),
-      _orijinal: r.para && r.para !== 'EUR'
-        ? (r.para === 'USD' ? `$ ${(r.bedel||0).toLocaleString('tr-TR',{minimumFractionDigits:2})}` : `₺ ${(r.bedel||0).toLocaleString('tr-TR',{minimumFractionDigits:2})}`)
+      ...r, _tip:'simay',
+      _gelirEur: r.para && r.para!=='EUR' ? (r.bedelEur||r.bedel) : (r.bedelEur||r.bedel),
+      _orijinal: r.para && r.para!=='EUR'
+        ? (r.para==='USD' ? `$ ${(r.bedel||0).toLocaleString('tr-TR',{minimumFractionDigits:2})}` : `₺ ${(r.bedel||0).toLocaleString('tr-TR',{minimumFractionDigits:2})}`)
         : null,
     }));
 
-  // Acenta satışları - para birimi EUR kabul et (bedel zaten EUR)
-  const acentalar = DB.acente
-    .filter(r => r.giris && r.giris.startsWith(String(activeYil)))
-    .map(r => ({
-      ...r,
-      _tip: 'acenta',
-      _gelirEur: r.kar || 0,
-      _orijinal: null,
-    }));
+  const toAcente = arr => (arr||[])
+    .filter(r => r.giris && r.giris.startsWith(yilStr))
+    .map(r => ({...r, _tip:'acenta', _gelirEur: r.kar||0, _orijinal:null}));
+
+  const simayAll  = [...toSimay(DB.simay), ...toSimay(prevDBT.simay), ...toSimay(nextDBT.simay)];
+  const acenteAll = [...toAcente(DB.acente), ...toAcente(prevDBT.acente), ...toAcente(nextDBT.acente)];
+
+  // Duplicate temizle
+  const simaylar  = [...new Map(simayAll.map(r=>[r.id,r])).values()];
+  const acentalar = [...new Map(acenteAll.map(r=>[r.id,r])).values()];
 
   let tumData = [...simaylar, ...acentalar].sort((a,b) => (a.giris||'').localeCompare(b.giris||''));
   if(q) tumData = tumData.filter(r => (r.misafir+r.tekne+(r.sorumlu||'')).toLowerCase().includes(q));
