@@ -2214,53 +2214,240 @@ let isReadOnly = false;
 
 
 
-async function dbLoad(yil){
+// ─── Ham DB yükle (merge yapmaz, her yıl için kullanılır) ──────────
+async function dbLoadRaw(yil){
   const y = yil || activeYil;
   const ref = getDocRef(y);
   try {
     const snap = await ref.get();
     if(snap.exists){
-      return snap.data();
-    } else {
-      // legacy: ilk yılda eski 'main' dokümanına bak
-      if(!yil){
-        const legSnap = await DOC_REF.get();
-        if(legSnap.exists){
-          const d = legSnap.data();
-          d.cfg = d.cfg || {};
-          d.cfg.yil = y;
-          await ref.set(JSON.parse(JSON.stringify(d)));
-          setTimeout(()=>toast('Veriler ' + y + ' yılına taşındı ✓'),1000);
-          return d;
-        }
-      }
-      const db2 = defaultDB();
-      db2.cfg.yil = y;
-      return db2;
+      const d = snap.data();
+      // localStorage'ı da güncelle (offline fallback için)
+      try{ localStorage.setItem(STORE_KEY+'_'+y, JSON.stringify(d)); }catch(e){}
+      return d;
     }
+    if(!yil){
+      const legSnap = await DOC_REF.get();
+      if(legSnap.exists){
+        const d = legSnap.data();
+        d.cfg = d.cfg || {};
+        d.cfg.yil = y;
+        await ref.set(JSON.parse(JSON.stringify(d)));
+        setTimeout(()=>toast('Veriler ' + y + ' yılına taşındı ✓'),1000);
+        return d;
+      }
+    }
+    // Firebase'de yok — localStorage'a bak
+    try{
+      const local = JSON.parse(localStorage.getItem(STORE_KEY+'_'+y));
+      if(local) return local;
+    }catch(e){}
+    const db2 = defaultDB();
+    db2.cfg.yil = y;
+    return db2;
   } catch(e){
     console.error('Firebase yükleme hatası:', e);
     try { return JSON.parse(localStorage.getItem(STORE_KEY+'_'+y)) || defaultDB(); } catch(e2){ return defaultDB(); }
   }
 }
 
+// ─── Cross-year önbelleği ────────────────────────────────────────────
+const _cyCache = {};
+let _cyCacheYil = null;
+let _cyCacheTime = 0;
+const _CY_CACHE_TTL = 10000; // 10 saniye
+
+async function _getCYDB(yil){
+  const now = Date.now();
+  if(_cyCacheYil !== activeYil || now - _cyCacheTime > _CY_CACHE_TTL){
+    Object.keys(_cyCache).forEach(k=>delete _cyCache[k]);
+    _cyCacheYil = activeYil;
+    _cyCacheTime = now;
+  }
+  if(!_cyCache[yil]) _cyCache[yil] = await dbLoadRaw(yil);
+  return _cyCache[yil];
+}
+
+function clearCYCache(){
+  Object.keys(_cyCache).forEach(k=>delete _cyCache[k]);
+  _cyCacheYil = null;
+  _cyCacheTime = 0;
+}
+
+// ─── Aktif yıl için yükle + komşu yıllardan cross-year merge ────────
+async function dbLoad(yil){
+  const d = await dbLoadRaw(yil || activeYil);
+  if(yil) return d; // Belirli yıl isteniyorsa merge yapma
+
+  const yilStr = String(activeYil);
+  const prevD = await _getCYDB(activeYil - 1);
+  const nextD = await _getCYDB(activeYil + 1);
+
+  // Bayat bayrak temizliği: kendi dokümanında _crossYear taşıyan ama orijinali komşuda
+  // artık bulunmayan (yıla taşınmış) kayıtlar aslında bu yıla aittir.
+  ['simay','acente'].forEach(key => {
+    const neigh = new Set([...(prevD[key]||[]), ...(nextD[key]||[])].map(r=>r.id));
+    (d[key]||[]).forEach(r => { if(r._crossYear && !neigh.has(r.id)){ delete r._crossYear; delete r._srcYil; } });
+  });
+
+  ['simay','acente'].forEach(key => {
+    const existing = new Set((d[key]||[]).map(r=>r.id));
+    // _srcYil = kaydın FİZİKSEL olarak durduğu yıl dokümanı (giriş tarihi yılı değil)
+    const cross = [
+      ...(prevD[key]||[]).filter(r=>r.giris&&r.giris.startsWith(yilStr)&&!existing.has(r.id)).map(r=>({...r, _crossYear:true, _srcYil:activeYil-1})),
+      ...(nextD[key]||[]).filter(r=>r.giris&&r.giris.startsWith(yilStr)&&!existing.has(r.id)).map(r=>({...r, _crossYear:true, _srcYil:activeYil+1})),
+    ];
+    if(cross.length) d[key] = [...(d[key]||[]), ...cross];
+  });
+
+  // Faturalar: rezervasyonu bu yıla ait olan ama komşu yıl dokümanında duran faturaları da getir
+  const rezYil = {};
+  [d, prevD, nextD].forEach(src => ['simay','acente'].forEach(k => (src[k]||[]).forEach(r => {
+    if(r.id && r.giris) rezYil[r.id] = r.giris.slice(0,4);
+  })));
+  const fMevcut = new Set((d.faturalar||[]).map(f=>f.id));
+  const fCross = [];
+  [[prevD, activeYil-1],[nextD, activeYil+1]].forEach(([nd, ny]) => {
+    (nd.faturalar||[]).forEach(f => {
+      if(!f.id || fMevcut.has(f.id)) return;
+      const ry = f.rezervasyonId ? rezYil[f.rezervasyonId] : null;
+      const bu = ry ? (ry === yilStr) : String(f.tarih||'').startsWith(yilStr);
+      if(bu){ fMevcut.add(f.id); fCross.push({...f, _crossYear:true, _srcYil:ny}); }
+    });
+  });
+  if(fCross.length) d.faturalar = [...(d.faturalar||[]), ...fCross];
+  return d;
+}
+
+// Diske yazarken cross-year (başka yıl dokümanına ait) fatura kopyalarını çıkar
+function _stripCross(d){
+  const c = JSON.parse(JSON.stringify(d));
+  if(Array.isArray(c.faturalar)) c.faturalar = c.faturalar.filter(f => !f._crossYear);
+  return c;
+}
+
+// ─── Kaydı doğru yılın DB'sine yaz ──────────────────────────────────
+async function dbSaveToYear(yil, d){
+  const origYil = activeYil;
+  const origRO  = isReadOnly;
+  activeYil  = yil;
+  isReadOnly = false;
+  const ref = getDocRef(yil);
+  const clean = _stripCross(d);
+  try {
+    await ref.set(clean);
+    localStorage.setItem(STORE_KEY+'_'+yil, JSON.stringify(clean));
+  } catch(e){
+    console.error('Firebase kayıt hatası:', e);
+    localStorage.setItem(STORE_KEY+'_'+yil, JSON.stringify(clean));
+    toast('İnternet bağlantısı yok — yerel kaydedildi','info');
+  }
+  activeYil  = origYil;
+  isReadOnly = origRO;
+  // Önbelleği temizle
+  clearCYCache();
+}
+
+// ─── Aktif yıl DB'sini kaydet ────────────────────────────────────────
 async function dbSave(d){
   if(isReadOnly){ toast('Geçmiş yıl — salt okunur mod, değişiklik yapılamaz','err'); return; }
   const ref = getDocRef(activeYil);
+  const clean = _stripCross(d);
   try {
-    await ref.set(JSON.parse(JSON.stringify(d)));
-    localStorage.setItem(STORE_KEY+'_'+activeYil, JSON.stringify(d));
+    await ref.set(clean);
+    localStorage.setItem(STORE_KEY+'_'+activeYil, JSON.stringify(clean));
   } catch(e){
     console.error('Firebase kayıt hatası:', e);
-    localStorage.setItem(STORE_KEY+'_'+activeYil, JSON.stringify(d));
+    localStorage.setItem(STORE_KEY+'_'+activeYil, JSON.stringify(clean));
     toast('İnternet bağlantısı yok — yerel kaydedildi','info');
   }
+  // Cache'i temizle — bir sonraki dbLoad taze veri çeksin
+  clearCYCache();
+}
+
+// ─── Bir kaydın hangi yılın DB'sinde fiziksel durduğunu bul ─────────
+async function findSrcYil(type, id){
+  // Önce in-memory DB'de _srcYil bilgisi var mı?
+  const inMem = (DB[type]||[]).find(r=>r.id===id);
+  if(inMem && inMem._srcYil){
+    const srcDoc = await _getCYDB(inMem._srcYil);
+    if((srcDoc[type]||[]).some(r=>r.id===id)) return inMem._srcYil;
+    // Bayrak bayat (kayıt başka yıla taşınmış) — kayıt aslında aktif yıla ait
+    delete inMem._crossYear; delete inMem._srcYil;
+    return activeYil;
+  }
+  if(inMem && !inMem._crossYear) return activeYil;
+  // Komşu yıllarda ara
+  for(const y of [activeYil-1, activeYil+1]){
+    const adj = await _getCYDB(y);
+    if((adj[type]||[]).find(r=>r.id===id)) return y;
+  }
+  return activeYil;
+}
+
+// ─── Kaydı doğru yıla kaydet (cross-year desteği) ───────────────────
+async function saveRecord(type, record, isNew){
+  const id = record.id;
+  const strip = o => { const c={...o}; delete c._crossYear; delete c._srcYil; return c; };
+  if(isNew){
+    // Yeni kayıt her zaman aktif yıla
+    const rec = strip(record);
+    DB[type] = (DB[type]||[]).filter(r=>r.id!==id);
+    DB[type].push(rec);
+    await dbSave(DB);
+    return;
+  }
+  const srcYil = await findSrcYil(type, id);
+  const old = (DB[type]||[]).find(r=>r.id===id) || {};
+  const rec = strip({...old, ...record}); // formda olmayan alanlar (ör. faturaOtoYok) korunur
+  if(srcYil === activeYil){
+    DB[type] = (DB[type]||[]).map(r=>r.id===id ? rec : r);
+    await dbSave(DB);
+  } else {
+    // Cross-year: o yılın DB'sini yükle, güncelle, kaydet
+    const adjDB = await dbLoadRaw(srcYil);
+    adjDB[type] = (adjDB[type]||[]).map(r=>r.id===id ? rec : r);
+    await dbSaveToYear(srcYil, adjDB);
+    // In-memory DB'yi de güncelle
+    DB[type] = (DB[type]||[]).map(r=>r.id===id ? {...rec,_crossYear:true,_srcYil:srcYil} : r);
+  }
+}
+
+// ─── Kaydı doğru yıldan sil (cross-year desteği) ────────────────────
+async function deleteRecordFromDB(type, id){
+  // Aktif yıldan sil
+  DB[type] = (DB[type]||[]).filter(r=>r.id!==id);
+  // İlişkili fatura varsa sil
+  if(type==='simay'||type==='acente'){
+    DB.faturalar = (DB.faturalar||[]).filter(f=>f.rezervasyonId!==id);
+  }
+  await dbSave(DB);
+  // Komşu yıllarda da ara
+  for(const y of [activeYil-1, activeYil+1]){
+    try{
+      const adj = await dbLoadRaw(y);
+      let changed = false;
+      if((adj[type]||[]).find(r=>r.id===id)){
+        adj[type] = adj[type].filter(r=>r.id!==id);
+        changed = true;
+      }
+      if((type==='simay'||type==='acente') && (adj.faturalar||[]).find(f=>f.rezervasyonId===id)){
+        adj.faturalar = adj.faturalar.filter(f=>f.rezervasyonId!==id);
+        changed = true;
+      }
+      if(changed) await dbSaveToYear(y, adj);
+    }catch(e){}
+  }
+  // Önbelleği temizle
+  clearCYCache();
 }
 async function switchYear(yil){
   yil = parseInt(yil);
   const currentYear = new Date().getFullYear();
   activeYil = yil;
   isReadOnly = yil < currentYear;
+  // Önbelleği temizle
+  clearCYCache();
   // Filtreleri sıfırla
   simayFilter = 'all';
   acenteFilter = 'all';
@@ -2582,11 +2769,11 @@ function editAcenteForm(id){
 //  SATIŞ → FATURA TAM SENKRONİZASYON
 // ═══════════════════════════════════════════════════════════════════
 function syncFaturaFromSatis(r, tip){
-  if(!DB.faturalar) return;
+  if(!DB.faturalar) return null;
   // Önce rezervasyonId ile eşleş, bulamazsan misafir adı ile dene (eski kayıtlar için)
   let fi = DB.faturalar.findIndex(f => f.rezervasyonId === r.id);
   if(fi === -1) fi = DB.faturalar.findIndex(f => !f.rezervasyonId && f.rezervasyon === r.misafir);
-  if(fi === -1) return;
+  if(fi === -1) return null;
   // Bulunan faturaya rezervasyonId'yi yaz (ileride doğru çalışsın)
   if(!DB.faturalar[fi].rezervasyonId) DB.faturalar[fi].rezervasyonId = r.id;
   const f = DB.faturalar[fi];
@@ -2609,9 +2796,24 @@ function syncFaturaFromSatis(r, tip){
     kesimDurum:  r.faturaDurum             !== undefined ? r.faturaDurum          : f.kesimDurum,
     not:         r.aciklama   !== undefined ? r.aciklama   : f.not,
   };
+  return DB.faturalar[fi];
 }
 
 
+
+// Satış kaydı kaydedildikten sonra faturayı oluştur / güncelle
+async function faturaSenkronize(r, tip, isNew){
+  const kayit = (DB[tip]||[]).find(x=>x.id===r.id) || r;  // _crossYear bilgisi için bellekteki kayıt
+  if(isNew){
+    await autoCreateFatura(kayit, tip);
+    toast('Fatura otomatik oluşturuldu ✓');
+    return;
+  }
+  const f = syncFaturaFromSatis(r, tip);
+  if(f){ await persistFatura(f); return; }
+  // Düzenlenen kaydın faturası yoksa (eski kayıt) oluştur — ama kullanıcı bilerek sildiyse oluşturma
+  if(!kayit.faturaOtoYok) await autoCreateFatura(kayit, tip);
+}
 
 async function saveSimay(){
   if(isReadOnly){ toast('Geçmiş yıl — kayıt eklenemez','err'); closeModal('modal-simay'); return; }
@@ -2661,11 +2863,10 @@ async function saveSimay(){
   };
   if(!r.misafir || !r.tekne || !r.giris){ toast('Misafir, tekne ve giriş tarihi zorunlu','err'); return; }
   const isNew = !id;
-  if(id){ DB.simay = DB.simay.map(x=>x.id===id?r:x); toast('Kayıt güncellendi'); }
-  else { DB.simay.push(r); toast('Simay satışı eklendi'); }
-  if(isNew){ autoCreateFatura(r, 'simay'); }
-  else { syncFaturaFromSatis(r, 'simay'); }
-  await dbSave(DB); closeModal('modal-simay'); clearSimayForm();
+  toast(isNew ? 'Simay satışı eklendi' : 'Kayıt güncellendi');
+  await saveRecord('simay', r, isNew);
+  await faturaSenkronize(r, 'simay', isNew);
+  closeModal('modal-simay'); clearSimayForm();
   simayFilter='all';
   await updateSidebar(); await refreshCurrentPage();
 }
@@ -2702,11 +2903,10 @@ async function saveAcente(){
   };
   if(!r.misafir || !r.tekne){ toast('Misafir ve tekne adı zorunlu','err'); return; }
   const isNew = !id;
-  if(id){ DB.acente = DB.acente.map(x=>x.id===id?r:x); toast('Kayıt güncellendi'); }
-  else { DB.acente.push(r); toast('Acente satışı eklendi'); }
-  if(isNew){ autoCreateFatura(r, 'acente'); }
-  else { syncFaturaFromSatis(r, 'acente'); }
-  await dbSave(DB); closeModal('modal-acente'); clearAcenteForm();
+  toast(isNew ? 'Acente satışı eklendi' : 'Kayıt güncellendi');
+  await saveRecord('acente', r, isNew);
+  await faturaSenkronize(r, 'acente', isNew);
+  closeModal('modal-acente'); clearAcenteForm();
   acenteFilter='all';
   await updateSidebar(); await refreshCurrentPage();
 }
@@ -2799,30 +2999,27 @@ async function confirmSifreOnay(){
 // ═══════════════════════════════════════════════════════════════════
 async function deleteRecord(type, id){
   const labels = {simay:'Simay satış kaydı', acente:'Acente satış kaydı', giderler:'Gider kaydı', faturalar:'Fatura kaydı'};
-  await sifreOnay(
-    `"${labels[type]||'Kayıt'}" silinecek. Bu işlem geri alınamaz.`,
-    '🗑 Kaydı Sil',
-    async () => {
-      // Aktif yıldan sil
-      DB[type] = (DB[type]||[]).filter(x=>x.id!==id);
-      await dbSave(DB);
-      // Komşu yıl DB'lerinde de ara ve sil
-      for(const yil of [activeYil-1, activeYil+1]){
-        try {
-          const adjDB = await dbLoad(yil);
-          if((adjDB[type]||[]).find(x=>x.id===id)){
-            adjDB[type] = adjDB[type].filter(x=>x.id!==id);
-            const oncekiYil = activeYil;
-            activeYil = yil;
-            await dbSave(adjDB);
-            activeYil = oncekiYil;
-          }
-        } catch(e){}
+
+  // Satış kaydı siliniyorsa bağlı fatura varsa onu da bildir
+  const bagFatura = (type==='simay'||type==='acente')
+    ? (DB.faturalar||[]).find(f=>f.rezervasyonId===id) : null;
+
+  const msg = bagFatura
+    ? `"${labels[type]||'Kayıt'}" ve bağlı fatura (${bagFatura.no}) silinecek. Bu işlem geri alınamaz.`
+    : `"${labels[type]||'Kayıt'}" silinecek. Bu işlem geri alınamaz.`;
+
+  await sifreOnay(msg, '🗑 Kaydı Sil', async () => {
+    const silinenFatura = (type==='faturalar') ? (DB.faturalar||[]).find(f=>f.id===id) : null;
+    await deleteRecordFromDB(type, id);
+    if(silinenFatura && silinenFatura.rezervasyonId){
+      for(const t of ['simay','acente']){
+        const res = (DB[t]||[]).find(x=>x.id===silinenFatura.rezervasyonId);
+        if(res) await saveRecord(t, {...res, faturaOtoYok:true}, false);
       }
-      toast('Kayıt silindi','info');
-      await updateSidebar(); await refreshCurrentPage();
     }
-  );
+    toast('Kayıt silindi','info');
+    await updateSidebar(); await refreshCurrentPage();
+  });
 }
 
 async function refreshCurrentPage(){
@@ -2834,25 +3031,12 @@ async function refreshCurrentPage(){
 //  SIDEBAR UPDATE
 // ═══════════════════════════════════════════════════════════════════
 async function updateSidebar(){
-  DB = await dbLoad();
+  DB = await dbLoad(); // cross-year merge dahil
+  await ensureFaturalar(); // eksik faturaları tamamla
   const yilStr = String(activeYil);
-  // Cross-year kayıtları da dahil et
-  const adjPrev = await dbLoad(activeYil-1);
-  const adjNext = await dbLoad(activeYil+1);
-  const allSimay = [
-    ...DB.simay.filter(r=>r.giris&&r.giris.startsWith(yilStr)),
-    ...(adjPrev.simay||[]).filter(r=>r.giris&&r.giris.startsWith(yilStr)),
-    ...(adjNext.simay||[]).filter(r=>r.giris&&r.giris.startsWith(yilStr)),
-  ];
-  const allAcente = [
-    ...DB.acente.filter(r=>r.giris&&r.giris.startsWith(yilStr)),
-    ...(adjPrev.acente||[]).filter(r=>r.giris&&r.giris.startsWith(yilStr)),
-    ...(adjNext.acente||[]).filter(r=>r.giris&&r.giris.startsWith(yilStr)),
-  ];
-  // Duplicate temizle
-  const simayUniq = [...new Map(allSimay.map(r=>[r.id,r])).values()];
-  const acenteUniq = [...new Map(allAcente.map(r=>[r.id,r])).values()];
-
+  // dbLoad() zaten cross-year kayıtları merge etti — sadece filtrele
+  const simayUniq = (DB.simay||[]).filter(r=>r.giris&&r.giris.startsWith(yilStr));
+  const acenteUniq = (DB.acente||[]).filter(r=>r.giris&&r.giris.startsWith(yilStr));
   const simayT = simayUniq.reduce((a,r)=>a+(r.kdvliBedel||(r.bedel+(r.kdvTutar||0))),0);
   const acenteT = acenteUniq.reduce((a,r)=>a+r.kar,0);
   const toplam = simayT + acenteT;
@@ -2860,7 +3044,7 @@ async function updateSidebar(){
   if(bc) bc.textContent = money(toplam);
   document.getElementById('badge-simay').textContent = simayUniq.length;
   const fbadge=document.getElementById('badge-fatura');
-  if(fbadge) fbadge.textContent=(DB.faturalar||[]).filter(r=>r.tarih&&r.tarih.startsWith(yilStr)).length;
+  if(fbadge) fbadge.textContent=getFaturalarForYil(yilStr).length;
   const tbadge=document.getElementById('badge-tum');
   if(tbadge) tbadge.textContent=simayUniq.length+acenteUniq.length;
   document.getElementById('badge-acente').textContent = acenteUniq.length;
@@ -3194,22 +3378,10 @@ async function renderSimayKPIs(){
 
 async function renderSimayTable(){
   DB=await dbLoad();
-  // Komşu yıllardan (activeYil-1, activeYil+1) giriş tarihi bu yıla ait kayıtları da çek
   const yilStr = String(activeYil);
-  const prevDB = await dbLoad(activeYil - 1);
-  const nextDB = await dbLoad(activeYil + 1);
-  const crossYearSimay = [
-    ...(prevDB.simay||[]).filter(r => r.giris && r.giris.startsWith(yilStr)),
-    ...(nextDB.simay||[]).filter(r => r.giris && r.giris.startsWith(yilStr)),
-  ];
-  // Mevcut yılın kayıtları + diğer yıllardan bu yıla ait olanlar (duplicate engelle)
-  const currentIds = new Set((DB.simay||[]).map(r=>r.id));
-  const allSimay = [
-    ...(DB.simay||[]).filter(r => r.giris && r.giris.startsWith(yilStr)),
-    ...crossYearSimay.filter(r => !currentIds.has(r.id)).map(r=>({...r,_kayitYili:parseInt(r.giris?.slice(0,4)||activeYil)!==activeYil?activeYil-1:activeYil+1})),
-  ];
   const q = (document.getElementById('simay-search')?.value||'').toLowerCase();
-  let data = allSimay.sort((a,b)=>b.ts-a.ts);
+  // dbLoad() zaten cross-year kayıtları merge etti
+  let data = (DB.simay||[]).filter(r=>r.giris&&r.giris.startsWith(yilStr)).sort((a,b)=>b.ts-a.ts);
   if(simayFilter!=='all') data=data.filter(r=>r.tekne===simayFilter);
   if(q) data=data.filter(r=>(r.misafir+r.tekne+(r.sorumlu||'')).toLowerCase().includes(q));
   
@@ -3281,21 +3453,10 @@ async function renderAcenteKPIs(){
 
 async function renderAcenteTable(){
   DB=await dbLoad();
-  // Komşu yıllardan giriş tarihi bu yıla ait kayıtları da çek
   const yilStr = String(activeYil);
-  const prevDB2 = await dbLoad(activeYil - 1);
-  const nextDB2 = await dbLoad(activeYil + 1);
-  const crossYearAcente = [
-    ...(prevDB2.acente||[]).filter(r => r.giris && r.giris.startsWith(yilStr)),
-    ...(nextDB2.acente||[]).filter(r => r.giris && r.giris.startsWith(yilStr)),
-  ];
-  const currentAIds = new Set((DB.acente||[]).map(r=>r.id));
-  const allAcente = [
-    ...(DB.acente||[]).filter(r => r.giris && r.giris.startsWith(yilStr)),
-    ...crossYearAcente.filter(r => !currentAIds.has(r.id)).map(r=>({...r,_kayitYili:parseInt(r.giris?.slice(0,4)||activeYil)!==activeYil?activeYil-1:activeYil+1})),
-  ];
   const q=(document.getElementById('acente-search')?.value||'').toLowerCase();
-  let data=allAcente.sort((a,b)=>b.ts-a.ts);
+  // dbLoad() zaten cross-year kayıtları merge etti
+  let data=(DB.acente||[]).filter(r=>r.giris&&r.giris.startsWith(yilStr)).sort((a,b)=>b.ts-a.ts);
   if(acenteFilter!=='all') data=data.filter(r=>(r.sorumlu||'').trim()===acenteFilter);
   if(q) data=data.filter(r=>(r.misafir+r.tekne+(r.sorumlu||'')).toLowerCase().includes(q));
   const tbody=document.getElementById('acente-tbody');
@@ -3854,41 +4015,46 @@ async function saveSettings(){
 //  YILLAR ARASI KAYIT TAŞIMA
 // ═══════════════════════════════════════════════════════════════════
 async function moveRecordToYear(tip, id){
-  // Kaydı bul
-  const kayit = (DB[tip]||[]).find(r=>r.id===id);
-  if(!kayit){ toast('Kayıt bulunamadı','err'); return; }
+  // Kaydı bul (cross-year merge sayesinde DB'de mevcut)
+  const kayitRaw = (DB[tip]||[]).find(r=>r.id===id);
+  if(!kayitRaw){ toast('Kayıt bulunamadı','err'); return; }
+  const kayit = {...kayitRaw}; delete kayit._crossYear; delete kayit._srcYil;
   const hedefYil = parseInt(kayit.giris.slice(0,4));
   if(!hedefYil || hedefYil === activeYil){ toast('Kayıt zaten bu yılda','err'); return; }
   if(!confirm(`Bu kaydı ${hedefYil} yılına taşımak istiyor musunuz?\n\n${kayit.misafir} — ${kayit.tekne}\nGiriş: ${fmtDate(kayit.giris)}`)){ return; }
 
-  // 1) Kayıtı bu yıldan sil
-  DB[tip] = DB[tip].filter(r=>r.id!==id);
-  await dbSave(DB);
+  // 1) Bağlı faturayı SİLİNMEDEN ÖNCE yakala (deleteRecordFromDB bağlı faturayı da siler)
+  const fEski = (DB.faturalar||[]).find(f=>f.rezervasyonId===id);
+  let guncelFatura = null;
+  if(fEski){
+    guncelFatura = {...fEski}; delete guncelFatura._crossYear; delete guncelFatura._srcYil;
+    guncelFatura.tarih = kayit.giris;                       // Fatura tarihi = rezervasyon giriş tarihi
+    guncelFatura.vade  = kayit.cikis || fEski.vade;
+    guncelFatura.rezervasyonId = id;
+  }
 
-  // 2) Hedef yılı yükle, kaydı ekle, kaydet
-  const hedefDB = await dbLoad(hedefYil);
+  // 2) Kaydı (ve eski faturayı) aktif yıldan ve komşu yıllardan sil
+  await deleteRecordFromDB(tip, id);
+
+  // 3) Hedef yılı yükle; kaydı ve faturayı AYNI dokümana yaz
+  const hedefDB = await dbLoadRaw(hedefYil);
   hedefDB[tip] = hedefDB[tip]||[];
-  // Zaten eklenmiş mi kontrol et
-  if(!hedefDB[tip].find(r=>r.id===id)){
-    hedefDB[tip].push(kayit);
+  hedefDB[tip] = hedefDB[tip].filter(r=>r.id!==id);
+  hedefDB[tip].push(kayit);
+  hedefDB.faturalar = (hedefDB.faturalar||[]).filter(f=>f.rezervasyonId!==id);
+  if(guncelFatura){
+    hedefDB.faturalar.push(guncelFatura);
+  } else if(!kayit.faturaOtoYok){
+    // Kaydın faturası yoksa hedef yılda yeni fatura oluştur
+    const no = await faturaNoUret(tip==='simay'?'SIM':'ACT', String(hedefYil), hedefDB.faturalar);
+    hedefDB.faturalar.push(faturaNesnesi(kayit, tip, no));
   }
-  // Hedef yıl DB'sine kaydet (geçici olarak activeYil'i değiştir)
-  const oncekiYil = activeYil;
-  const oncekiReadOnly = isReadOnly;
-  activeYil = hedefYil;
-  isReadOnly = false;
-  try {
-    const ref = getDocRef(hedefYil);
-    await ref.set(JSON.parse(JSON.stringify(hedefDB)));
-    localStorage.setItem(STORE_KEY+'_'+hedefYil, JSON.stringify(hedefDB));
-  } catch(e){
-    console.error('Taşıma hatası:', e);
-    localStorage.setItem(STORE_KEY+'_'+hedefYil, JSON.stringify(hedefDB));
-    toast('İnternet bağlantısı yok — yerel kaydedildi','info');
-  } finally {
-    activeYil = oncekiYil;
-    isReadOnly = oncekiReadOnly;
-  }
+  await dbSaveToYear(hedefYil, hedefDB);
+
+  // 4) Önbelleği temizle ve bellekteki DB'yi tazele
+  clearCYCache();
+  DB = await dbLoad();
+
   toast(`Kayıt ${hedefYil} yılına taşındı ✓`);
   await updateSidebar();
   await refreshCurrentPage();
@@ -4313,30 +4479,104 @@ async function removeBanka(idx){
 // ═══════════════════════════════════════════════════════════════════
 //  OTOMATİK FATURA OLUŞTUR
 // ═══════════════════════════════════════════════════════════════════
-function autoCreateFatura(r, tip){
-  if(!DB.faturalar) DB.faturalar=[];
+// Fatura numarası: aynı önek+yıl için mevcut en büyük sıra + 1 (silinmelerde çakışmaz)
+async function faturaNoUret(prefix, yil, ekListe){
+  const liste = [...(DB.faturalar||[]), ...(ekListe||[])];
+  if(String(yil) !== String(activeYil)){
+    try{ const raw = await dbLoadRaw(parseInt(yil)); liste.push(...(raw.faturalar||[])); }catch(e){}
+  }
+  const re = new RegExp('^'+prefix+'-'+yil+'-(\\d+)$');
+  let max = 0;
+  liste.forEach(f=>{ const m = re.exec(f.no||''); if(m) max = Math.max(max, parseInt(m[1],10)); });
+  return prefix + '-' + yil + '-' + String(max+1).padStart(3,'0');
+}
+
+// Satış kaydından fatura nesnesi üret (kaydetmez)
+function faturaNesnesi(r, tip, no){
   const tutar = r.bedel||0;
-  const fNo = (tip==='simay'?'SIM':'ACT') + '-' + activeYil + '-' + String(DB.faturalar.length+1).padStart(3,'0');
-  const fatura = {
+  const od = r.odemeDurum;
+  const durum = (od && od!=='bekliyor') ? od : ((r.on>0) ? 'kismi' : 'bekliyor');
+  return {
     id: uid(), ts: Date.now(),
-    no: fNo, tur: 'gelir',
+    no, tur: 'gelir',
     tarih: r.giris || today(),
     vade: r.cikis || '',
     musteri: r.misafir,
-    aciklama: (tip==='simay'?'Simay Tekneleri — ':'Acente/Dış Satış — ') + r.tekne + (r.gliman?' ('+r.gliman+(r.climan?' → '+r.climan:'')+')'  : ''),
+    aciklama: (tip==='simay'?'Simay Tekneleri — ':'Acente/Dış Satış — ') + (r.tekne||'') + (r.gliman?' ('+r.gliman+(r.climan?' → '+r.climan:'')+')' : ''),
     tutar, kdvOran: r.kdvOran||0, kdv: r.kdvTutar||0,
     toplam: r.kdvliBedel||tutar,
     odenen: r.on||0,
     kalan: r.kalan||(tutar-(r.on||0)),
-    durum: (r.odemeDurum==='odendi')?'odendi':(r.on>0?'kismi':'bekliyor'),
+    durum,
     kesimDurum: r.faturaDurum||'kesilmedi',
     para: r.para||'EUR',
     rezervasyon: r.misafir,
     rezervasyonId: r.id,
     not: r.aciklama||'',
   };
-  DB.faturalar.push(fatura);
-  toast('Fatura otomatik oluşturuldu ✓');
+}
+
+// Faturayı, bağlı rezervasyonla AYNI yıl dokümanına yaz (cross-year güvenli)
+async function persistFatura(f){
+  const src = (f._crossYear && f._srcYil && f._srcYil !== activeYil) ? f._srcYil : null;
+  const clean = {...f}; delete clean._crossYear; delete clean._srcYil;
+  if(src){
+    const adj = await dbLoadRaw(src);
+    adj.faturalar = adj.faturalar || [];
+    const i = adj.faturalar.findIndex(x=>x.id===clean.id);
+    if(i === -1) adj.faturalar.push(clean); else adj.faturalar[i] = clean;
+    await dbSaveToYear(src, adj);
+    if(!DB.faturalar) DB.faturalar = [];
+    if(!DB.faturalar.some(x=>x.id===f.id)) DB.faturalar.push(f);
+  } else {
+    if(!DB.faturalar) DB.faturalar = [];
+    const i = DB.faturalar.findIndex(x=>x.id===f.id);
+    if(i === -1) DB.faturalar.push(f); else DB.faturalar[i] = f;
+    await dbSave(DB);
+  }
+}
+
+// Satış kaydı için fatura oluştur (zaten varsa yenisini oluşturmaz)
+async function autoCreateFatura(r, tip, opts){
+  if(!DB.faturalar) DB.faturalar = [];
+  const mevcut = DB.faturalar.find(f=>f.rezervasyonId === r.id);
+  if(mevcut) return mevcut;
+  const yil = (r.giris||'').slice(0,4) || String(activeYil);
+  const no = await faturaNoUret(tip==='simay'?'SIM':'ACT', yil);
+  const f = faturaNesnesi(r, tip, no);
+  // Rezervasyon başka yıl dokümanındaysa fatura da orada tutulur
+  if(r._crossYear && r._srcYil){ f._crossYear = true; f._srcYil = r._srcYil; }
+  await persistFatura(f);
+  return f;
+}
+
+// Eksik faturaları tamamla: aktif yıldaki her satış kaydının bir faturası olmalı
+let _ensureBusy = false;
+async function ensureFaturalar(){
+  if(_ensureBusy || isReadOnly) return 0;
+  _ensureBusy = true;
+  let n = 0;
+  try{
+    const yilStr = String(activeYil);
+    if(!DB.faturalar) DB.faturalar = [];
+    const liste = [
+      ...(DB.simay||[]).filter(r=>r.giris && r.giris.startsWith(yilStr)).map(r=>['simay', r]),
+      ...(DB.acente||[]).filter(r=>r.giris && r.giris.startsWith(yilStr)).map(r=>['acente', r]),
+    ];
+    for(const [tip, r] of liste){
+      if(r.faturaOtoYok) continue; // kullanıcı faturayı bilerek sildi
+      if(DB.faturalar.some(f=>f.rezervasyonId === r.id)) continue;
+      // Eski, bağsız fatura (aynı müşteri, aynı yıl) varsa yenisini üretmek yerine bağla
+      const eski = DB.faturalar.find(f=>!f.rezervasyonId && f.tur==='gelir' &&
+        (f.rezervasyon===r.misafir || f.musteri===r.misafir) && String(f.tarih||'').startsWith(yilStr));
+      if(eski){ eski.rezervasyonId = r.id; await persistFatura(eski); n++; continue; }
+      await autoCreateFatura(r, tip);
+      n++;
+    }
+  } catch(e){ console.error('ensureFaturalar hatası:', e); }
+  finally { _ensureBusy = false; }
+  if(n) toast(n + ' satış kaydı için fatura otomatik oluşturuldu ✓');
+  return n;
 }
 
 function clearFaturaForm(){
@@ -4376,6 +4616,7 @@ async function saveFatura(){
     rezervasyonId: mevcutFatura?.rezervasyonId || '',
     not: document.getElementById('ff-not').value.trim(),
   };
+  if(mevcutFatura && mevcutFatura._crossYear){ r._crossYear = true; r._srcYil = mevcutFatura._srcYil; }
   if(!r.no || !r.tarih || !r.musteri){ toast('Fatura no, tarih ve müşteri zorunlu','err'); return; }
   if(!DB.faturalar) DB.faturalar=[];
   if(id){ DB.faturalar=DB.faturalar.map(x=>x.id===id?r:x); toast('Fatura güncellendi ✓'); }
@@ -4383,11 +4624,13 @@ async function saveFatura(){
 
   // ── Fatura → Satış kaydı tam senkronizasyonu ───────────────────
   // rezervasyonId yoksa faturayı misafir adıyla satış kaydına bağla
-  if(!r.rezervasyonId){
-    const simayMatch = (DB.simay||[]).find(x=>x.misafir===r.musteri && !x._faturaId);
+  if(!r.rezervasyonId && r.tur==='gelir'){
+    // Başka bir faturaya zaten bağlı olmayan, aynı müşterinin satış kaydını bul
+    const bos = x => x.misafir===r.musteri && !(DB.faturalar||[]).some(f=>f.rezervasyonId===x.id && f.id!==r.id);
+    const simayMatch = (DB.simay||[]).find(bos);
     if(simayMatch){ r.rezervasyonId=simayMatch.id; DB.faturalar=DB.faturalar.map(x=>x.id===r.id?{...x,rezervasyonId:simayMatch.id}:x); }
     else {
-      const acenteMatch = (DB.acente||[]).find(x=>x.misafir===r.musteri && !x._faturaId);
+      const acenteMatch = (DB.acente||[]).find(bos);
       if(acenteMatch){ r.rezervasyonId=acenteMatch.id; DB.faturalar=DB.faturalar.map(x=>x.id===r.id?{...x,rezervasyonId:acenteMatch.id}:x); }
     }
   }
@@ -4398,7 +4641,7 @@ async function saveFatura(){
 
     const si = (DB.simay||[]).findIndex(x=>x.id===r.rezervasyonId);
     if(si !== -1){
-      DB.simay[si] = {
+      const yeniSimay = {
         ...DB.simay[si],
         misafir:    r.musteri   || DB.simay[si].misafir,
         giris:      r.tarih     || DB.simay[si].giris,
@@ -4414,11 +4657,12 @@ async function saveFatura(){
         faturaDurum: yeniFatura,
         aciklama:   r.not       || DB.simay[si].aciklama,
       };
+      await saveRecord('simay', yeniSimay, false); // doğru yıl dokümanına yaz
     }
 
     const ai = (DB.acente||[]).findIndex(x=>x.id===r.rezervasyonId);
     if(ai !== -1){
-      DB.acente[ai] = {
+      const yeniAcente = {
         ...DB.acente[ai],
         misafir:    r.musteri   || DB.acente[ai].misafir,
         giris:      r.tarih     || DB.acente[ai].giris,
@@ -4431,11 +4675,14 @@ async function saveFatura(){
         faturaDurum: yeniFatura,
         aciklama:   r.not       || DB.acente[ai].aciklama,
       };
+      await saveRecord('acente', yeniAcente, false); // doğru yıl dokümanına yaz
     }
   }
   // ────────────────────────────────────────────────────────────────
 
-  await dbSave(DB); closeModal('modal-fatura'); clearFaturaForm();
+  const kaydedilen = (DB.faturalar||[]).find(x=>x.id===r.id) || r;
+  await persistFatura(kaydedilen);
+  closeModal('modal-fatura'); clearFaturaForm();
   await updateSidebar(); await refreshCurrentPage();
 }
 
@@ -4452,7 +4699,7 @@ function editFaturaForm(id){
   document.getElementById('ff-kdv-oran').value=r.kdvOran||0;
   document.getElementById('ff-kdv-tutar').value=r.kdv||'';
   document.getElementById('ff-toplam').value=r.toplam||'';
-  document.getElementById('ff-odenen').value=r.odened||'';
+  document.getElementById('ff-odenen').value=r.odenen||'';
   document.getElementById('ff-kalan').value=r.kalan||'';
   document.getElementById('ff-durum').value=r.durum||'bekliyor';
   const fk=document.getElementById('ff-kesim-durum'); if(fk) fk.value=r.kesimDurum||'kesilmedi';
@@ -4464,9 +4711,33 @@ function editFaturaForm(id){
 
 const DURUM_LABEL = {bekliyor:'⏳ Bekliyor',kismi:'🔶 Kısmi',odendi:'✅ Ödendi',gecikti:'🔴 Gecikti',iptal:'❌ İptal'};
 
+
+// ─── Aktif yıla ait faturaları belirle ───────────────────────────────
+// Fatura yıl filtresi: fatura.tarih VEYA bağlı rezervasyonun giris yılı
+function getFaturalarForYil(yilStr){
+  // Rezervasyon ID → giris yılı haritası (cross-year dahil)
+  const rezYilMap = {};
+  (DB.simay||[]).forEach(r=>{ if(r.id&&r.giris) rezYilMap[r.id]=r.giris.slice(0,4); });
+  (DB.acente||[]).forEach(r=>{ if(r.id&&r.giris) rezYilMap[r.id]=r.giris.slice(0,4); });
+
+  // Tüm DB.faturalar içinden bu yıla ait olanları bul
+  const sonuc = (DB.faturalar||[]).filter(f => {
+    // 1. Bağlı rezervasyonun giris yılı bu yıl mı?
+    if(f.rezervasyonId && rezYilMap[f.rezervasyonId]){
+      return rezYilMap[f.rezervasyonId] === yilStr;
+    }
+    // 2. rezervasyonId ile eşleşme yoksa tarih alanına bak
+    if(f.tarih) return f.tarih.startsWith(yilStr);
+    return false;
+  });
+
+  return sonuc;
+}
+
 async function renderFatura(){
-  DB=await dbLoad(activeYil);
-  const data=(DB.faturalar||[]).filter(r=>r.tarih&&r.tarih.startsWith(String(activeYil))).sort((a,b)=>a.tarih.localeCompare(b.tarih));
+  DB=await dbLoad();
+  await ensureFaturalar(); // satış kaydı olup faturası olmayanları otomatik oluştur
+  const data=getFaturalarForYil(String(activeYil)).sort((a,b)=>(a.tarih||'').localeCompare(b.tarih||''));
   const gelir=data.filter(r=>r.tur==='gelir');
   const gider=data.filter(r=>r.tur==='gider');
   const bekleyen=data.filter(r=>r.durum==='bekliyor'||r.durum==='kismi'||r.durum==='gecikti');
@@ -4534,7 +4805,7 @@ async function renderFatura(){
 }
 
 function exportFaturaCSV(){
-  const data=(DB.faturalar||[]).filter(r=>r.tarih&&r.tarih.startsWith(String(activeYil)));
+  const data=getFaturalarForYil(String(activeYil));
   let csv='\uFEFFNumara,Fatura No,Tur,Tarih,Vade,Musteri,Aciklama,Tutar(EUR),KDV(EUR),Toplam(EUR),Odenen(EUR),Kalan(EUR),Durum\r\n';
   data.forEach(r=>{
     csv+=`"${r.no}","${r.tur==='gelir'?'Gelir':'Gider'}","${fmtDate(r.tarih)}","${fmtDate(r.vade)||''}","${r.musteri}","${r.aciklama||''}",${r.tutar},${r.kdv||0},${r.toplam},${r.odenen||0},${r.kalan||0},"${r.durum}"\r\n`;
@@ -5687,7 +5958,6 @@ window.showSimayDetail = showSimayDetail;
 window.showAcenteDetail = showAcenteDetail;
 window.doLogout = doLogout;
 window.switchYear = switchYear;
-window.onMisafirInput = onMisafirInput;
 window.addSorumlu = addSorumlu;
 window.removeSorumlu = removeSorumlu;
 window.toggleTheme = toggleTheme;
@@ -5738,11 +6008,7 @@ window.onKumanyaRezChange = onKumanyaRezChange;
 // App başlangıç — login butonu hem DOMContentLoaded hem onclick ile bağlı
 document.addEventListener('DOMContentLoaded', ()=>{
   document.getElementById('app').style.display = 'none';
-  const loginBtn = document.getElementById('login-btn');
-  if(loginBtn && !loginBtn._bound){
-    loginBtn.addEventListener('click', doLogin);
-    loginBtn._bound = true;
-  }
+  // Giriş butonu HTML'deki onclick="doLogin()" ile bağlı (çift tetiklenmesin diye burada tekrar bağlanmaz)
   const passEl = document.getElementById('login-password');
   if(passEl) passEl.addEventListener('keydown', e => { if(e.key === 'Enter') doLogin(); });
 });
